@@ -1,0 +1,51 @@
+<section class="loreframe-library__browser" aria-label="{{localize "LOREFRAME.Library.Title"}}">
+  <div class="loreframe-library__search">
+    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+    <input type="search" id="loreframe-library-search" name="query" value="{{query}}" autocomplete="off"
+           placeholder="{{localize "LOREFRAME.Library.SearchPlaceholder"}}" aria-label="{{localize "LOREFRAME.Library.Search"}}">
+  </div>
+
+  {{#if mineCategory}}
+  <div class="loreframe-library__toolbar">
+    <button type="button" id="loreframe-library-import" data-action="importTemplates">
+      <i class="fa-solid fa-file-import" aria-hidden="true"></i><span>{{localize "LOREFRAME.UserTemplates.Import"}}</span>
+    </button>
+    <button type="button" id="loreframe-library-export" data-action="exportTemplates" data-scope="all">
+      <i class="fa-solid fa-file-export" aria-hidden="true"></i><span>{{localize "LOREFRAME.UserTemplates.ExportAll"}}</span>
+    </button>
+    <input type="file" name="importFile" accept=".json,application/json" hidden>
+  </div>
+  {{/if}}
+
+  <div class="loreframe-library__results">
+    {{#if empty}}
+    <p class="loreframe-library__empty">{{localize (concat "LOREFRAME.Library.Empty." empty)}}</p>
+    {{else}}
+    <ul class="loreframe-library__grid" role="list">
+      {{#each cards}}
+      <li class="loreframe-library__card{{#if selected}} loreframe-library__card--selected{{/if}}"
+          data-template-id="{{id}}" data-search="{{searchText}}">
+        <button type="button" id="loreframe-library-card-{{id}}" class="loreframe-library__card-main"
+                data-action="selectTemplate" aria-pressed="{{#if selected}}true{{else}}false{{/if}}">
+          <span class="loreframe-library__thumb" aria-hidden="true">
+            {{#if thumbnail}}<img src="{{thumbnail}}" alt="" loading="lazy">{{else}}<i class="{{icon}}"></i>{{/if}}
+          </span>
+          <span class="loreframe-library__card-text">
+            <span class="loreframe-library__card-name">{{name}}</span>
+            {{#if description}}<span class="loreframe-library__card-desc">{{description}}</span>{{/if}}
+          </span>
+          {{#if systemBadge}}<span class="loreframe-library__badge">{{systemBadge}}</span>{{/if}}
+        </button>
+        <button type="button" id="loreframe-library-favorite-{{id}}" class="loreframe-library__favorite"
+                data-action="toggleFavorite" aria-pressed="{{#if favorite}}true{{else}}false{{/if}}"
+                aria-label="{{localize (ifThen favorite "LOREFRAME.Library.Unfavorite" "LOREFRAME.Library.Favorite")}}"
+                data-tooltip="{{localize (ifThen favorite "LOREFRAME.Library.Unfavorite" "LOREFRAME.Library.Favorite")}}">
+          <i class="{{#if favorite}}fa-solid{{else}}fa-regular{{/if}} fa-star" aria-hidden="true"></i>
+        </button>
+      </li>
+      {{/each}}
+    </ul>
+    <p class="loreframe-library__empty loreframe-library__no-results" hidden>{{localize "LOREFRAME.Library.NoResults"}}</p>
+    {{/if}}
+  </div>
+</section>

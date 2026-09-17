@@ -1,0 +1,60 @@
+<aside class="loreframe-library__preview" aria-label="{{localize "LOREFRAME.Library.Preview"}}">
+  {{#if selected}}
+  <header class="loreframe-library__preview-header">
+    <h2 class="loreframe-library__preview-title">{{selected.name}}</h2>
+    {{#if selected.description}}<p class="loreframe-library__preview-desc">{{selected.description}}</p>{{/if}}
+  </header>
+
+  <div class="loreframe-library__preview-body">
+    {{#if selected.previewError}}
+    <p class="loreframe-library__empty">{{localize "LOREFRAME.Library.PreviewFailed"}}</p>
+    {{else}}
+    {{!-- Markup comes only from TemplateRenderer, which escapes values and enforces the tag allow-list. --}}
+    <div class="loreframe-library__canvas" inert>{{{selected.previewHtml}}}</div>
+    {{/if}}
+  </div>
+
+  <footer class="loreframe-library__preview-footer">
+    {{#if presets}}
+    <div class="loreframe-library__preset">
+      <label for="loreframe-library-preset">{{localize "LOREFRAME.Library.Preset"}}</label>
+      <select id="loreframe-library-preset" name="preset">
+        {{selectOptions presets.options selected=presets.value valueAttr="value" labelAttr="label" localize=true}}
+      </select>
+    </div>
+    {{/if}}
+    <div class="loreframe-library__template-actions">
+      {{#if selected.mine}}
+      <p class="loreframe-library__hint">{{localize "LOREFRAME.UserTemplates.BasedOn"}} <strong>{{selected.baseName}}</strong></p>
+      <button type="button" id="loreframe-library-edit" data-action="editTemplate">
+        <i class="fa-solid fa-sliders" aria-hidden="true"></i><span>{{localize "LOREFRAME.UserTemplates.Edit"}}</span>
+      </button>
+      <button type="button" id="loreframe-library-duplicate" data-action="duplicateTemplate"
+              aria-label="{{localize "LOREFRAME.UserTemplates.Duplicate"}}" data-tooltip="{{localize "LOREFRAME.UserTemplates.Duplicate"}}">
+        <i class="fa-solid fa-copy" aria-hidden="true"></i>
+      </button>
+      <button type="button" id="loreframe-library-export-one" data-action="exportTemplates" data-scope="selected"
+              aria-label="{{localize "LOREFRAME.UserTemplates.Export"}}" data-tooltip="{{localize "LOREFRAME.UserTemplates.Export"}}">
+        <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+      </button>
+      <button type="button" id="loreframe-library-delete" class="loreframe-library__danger" data-action="deleteTemplate"
+              aria-label="{{localize "LOREFRAME.UserTemplates.Delete"}}" data-tooltip="{{localize "LOREFRAME.UserTemplates.Delete"}}">
+        <i class="fa-solid fa-trash" aria-hidden="true"></i>
+      </button>
+      {{else}}
+      <button type="button" id="loreframe-library-customize" data-action="customize">
+        <i class="fa-solid fa-bookmark" aria-hidden="true"></i><span>{{localize "LOREFRAME.UserTemplates.Customize"}}</span>
+      </button>
+      {{/if}}
+    </div>
+    {{#unless canInsert}}<p class="loreframe-library__hint">{{localize "LOREFRAME.Library.NoEditor"}}</p>{{/unless}}
+    <button type="button" id="loreframe-library-insert" class="loreframe-library__insert" data-action="insert"
+            {{#unless canInsert}}disabled{{/unless}}>
+      <i class="fa-solid fa-plus" aria-hidden="true"></i>
+      <span>{{localize "LOREFRAME.Library.Insert"}}</span>
+    </button>
+  </footer>
+  {{else}}
+  <p class="loreframe-library__empty">{{localize "LOREFRAME.Library.NoSelection"}}</p>
+  {{/if}}
+</aside>

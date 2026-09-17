@@ -1,0 +1,14 @@
+<nav class="loreframe-library__nav" aria-label="{{localize "LOREFRAME.Library.Categories"}}">
+  <ul class="loreframe-library__categories">
+    {{#each categories}}
+    <li>
+      <button type="button" id="loreframe-library-category-{{id}}" class="loreframe-library__category"
+              data-action="selectCategory" data-category="{{id}}" aria-current="{{#if active}}true{{else}}false{{/if}}">
+        <i class="{{icon}} fa-fw" aria-hidden="true"></i>
+        <span class="loreframe-library__category-label">{{localize label}}</span>
+        <span class="loreframe-library__count">{{count}}</span>
+      </button>
+    </li>
+    {{/each}}
+  </ul>
+</nav>

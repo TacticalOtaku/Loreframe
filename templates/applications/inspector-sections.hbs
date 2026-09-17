@@ -1,0 +1,24 @@
+{{!-- Inspector field groups (General / Sections / Options / Style). Context: sections, idPrefix. --}}
+{{#each sections}}
+<fieldset class="loreframe-inspector__section loreframe-inspector__section--{{id}}">
+  <legend>{{localize label}}</legend>
+  {{#each fields}}
+  <div class="form-group">
+    <label for="{{../../idPrefix}}-{{id}}">{{localize label}}</label>
+    <div class="form-fields">
+      {{#if (eq type "select")}}
+      <select id="{{../../idPrefix}}-{{id}}" name="{{id}}">
+        {{selectOptions options selected=value valueAttr="value" labelAttr="label" localize=true}}
+      </select>
+      {{else if (eq type "boolean")}}
+      <input type="checkbox" id="{{../../idPrefix}}-{{id}}" name="{{id}}" {{checked value}}>
+      {{else if (eq type "image")}}
+      <file-picker id="{{../../idPrefix}}-{{id}}" name="{{id}}" type="image" value="{{value}}"></file-picker>
+      {{else}}
+      <input type="text" id="{{../../idPrefix}}-{{id}}" name="{{id}}" value="{{value}}">
+      {{/if}}
+    </div>
+  </div>
+  {{/each}}
+</fieldset>
+{{/each}}
