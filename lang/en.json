@@ -1,0 +1,561 @@
+{
+  "LOREFRAME": {
+    "Title": "Loreframe",
+    "Editor": {
+      "Menu": "Loreframe",
+      "QuickBlocks": "Quick Blocks",
+      "OpenLibrary": "Open Template Library…",
+      "Layouts": "Layouts",
+      "Structures": "Structures",
+      "Favorites": "Favorites",
+      "Recent": "Recent"
+    },
+    "Library": {
+      "Title": "Templates",
+      "Search": "Search templates",
+      "Categories": "Categories",
+      "Preview": "Preview",
+      "Insert": "Insert",
+      "Category": {
+        "All": "All",
+        "Favorites": "Favorites",
+        "Recent": "Recent",
+        "Blocks": "Blocks",
+        "Layouts": "Layouts",
+        "NPC": "Characters",
+        "Locations": "Locations",
+        "Wiki": "Wiki",
+        "Gallery": "Galleries",
+        "Campaign": "Campaign",
+        "System": "Game system",
+        "Mine": "My Templates"
+      },
+      "Empty": {
+        "favorites": "Star templates to keep them here.",
+        "recent": "Templates you insert will appear here.",
+        "category": "No templates in this category yet.",
+        "mine": "No templates of your own yet. Select any template and choose “Save as my template”."
+      },
+      "NoSelection": "Select a template to preview it.",
+      "SearchPlaceholder": "Search by name, tag or category",
+      "NoResults": "No templates match your search.",
+      "NoEditor": "Click into a Journal page editor to insert there.",
+      "Favorite": "Add to favorites",
+      "Unfavorite": "Remove from favorites",
+      "PreviewFailed": "This template could not be previewed. See the console for details.",
+      "Preset": "Preset"
+    },
+    "Settings": {
+      "Debug": {
+        "Name": "Debug logging",
+        "Hint": "Write detailed Loreframe diagnostics to the browser console."
+      },
+      "EnableIntegrations": {
+        "Name": "Game system integrations",
+        "Hint": "Allow Loreframe to use data from supported game systems, such as dnd5e."
+      }
+    },
+    "Error": {
+      "InsertFailed": "Loreframe could not insert the block. See the console for details.",
+      "NoEditor": "No editable Journal editor is open. Click into a page editor first.",
+      "PreferencesFailed": "Loreframe could not save your template preferences.",
+      "BlockMissing": "That block is no longer on the page.",
+      "UpdateFailed": "Loreframe could not update the block. See the console for details.",
+      "BlockVersion": "This block was made with another version of its template and cannot be edited here. It is kept unchanged.",
+      "MigrationFailed": "The block could not be updated to the current version. It is kept unchanged; see the console for details."
+    },
+    "Template": {
+      "Heading": {
+        "Name": "Heading",
+        "Description": "A section title with an optional subtitle."
+      },
+      "Note": {
+        "Name": "Note",
+        "Description": "A highlighted aside for helpful details."
+      },
+      "Lore": {
+        "Name": "Lore",
+        "Description": "An aside for history, legends and in-world knowledge."
+      },
+      "Warning": {
+        "Name": "Warning",
+        "Description": "An aside that flags danger or important caveats."
+      },
+      "Divider": {
+        "Name": "Divider",
+        "Description": "A decorative break between sections."
+      },
+      "Subtitle": {
+        "Name": "Subtitle",
+        "Description": "A quiet line beneath a heading."
+      },
+      "Quote": {
+        "Name": "Quote",
+        "Description": "A pull quote with an attribution.",
+        "Placeholder": "The river remembers every name it has swallowed.",
+        "Attribution": "Ferryman of Olt"
+      },
+      "ReadAloud": {
+        "Name": "Read Aloud",
+        "Description": "Boxed text to read to the players.",
+        "Placeholder": "Describe what the characters see, hear and smell."
+      },
+      "GmNote": {
+        "Name": "GM Note",
+        "Description": "A private note that only owners of the page can see."
+      },
+      "Secret": {
+        "Name": "Secret",
+        "Description": "Hidden information you can reveal to players later."
+      },
+      "ImageText": {
+        "Name": "Image + Text",
+        "Description": "An image beside a passage of text."
+      },
+      "HeroImage": {
+        "Name": "Hero Image",
+        "Description": "A wide banner image with a caption."
+      },
+      "KeyValue": {
+        "Name": "Key/Value List",
+        "Description": "Short facts as label and value pairs.",
+        "Title": "Details",
+        "KeyPlaceholder": "Label",
+        "ValuePlaceholder": "Value"
+      },
+      "Tags": {
+        "Name": "Tags",
+        "Description": "A row of short labels.",
+        "Placeholder": "Tag"
+      },
+      "StatsRow": {
+        "Name": "Stats Row",
+        "Description": "A row of labelled numbers.",
+        "LabelPlaceholder": "Stat",
+        "ValuePlaceholder": "0"
+      },
+      "TwoColumns": {
+        "Name": "Two Columns",
+        "Description": "Two equal columns."
+      },
+      "NarrowWide": {
+        "Name": "Columns 33/66",
+        "Description": "A narrow column beside a wide one."
+      },
+      "WideNarrow": {
+        "Name": "Columns 66/33",
+        "Description": "A wide column beside a narrow one."
+      },
+      "ThreeColumns": {
+        "Name": "Three Columns",
+        "Description": "Three equal columns."
+      },
+      "SidebarLeft": {
+        "Name": "Sidebar Left",
+        "Description": "A sidebar on the left of the main content."
+      },
+      "SidebarRight": {
+        "Name": "Sidebar Right",
+        "Description": "A sidebar on the right of the main content."
+      },
+      "HeroContent": {
+        "Name": "Hero + Content",
+        "Description": "A banner with title above the page content."
+      },
+      "MediaContent": {
+        "Name": "Media + Content",
+        "Description": "An image beside a content area."
+      },
+      "CardGrid": {
+        "Name": "Card Grid",
+        "Description": "A responsive grid of cards."
+      },
+      "Gallery": {
+        "Name": "Gallery",
+        "Description": "A grid of images with captions.",
+        "PlaceholderAlt": "Gallery image"
+      },
+      "NpcCard": {
+        "Name": "NPC Card",
+        "Description": "A compact character card: portrait, identity, key facts and notes."
+      },
+      "NpcDossier": {
+        "Name": "NPC Dossier",
+        "Description": "A full character profile with optional sections and GM-only secrets."
+      },
+      "Location": {
+        "Name": "Location",
+        "Description": "A place page: hero, key facts, linked points of interest, map, rumours, secrets and a gallery."
+      },
+      "WikiArticle": {
+        "Name": "Wiki Article",
+        "Description": "A long-form lore article with an infobox, contents and related entries."
+      }
+    },
+    "Field": {
+      "Title": "Title",
+      "Subtitle": "Subtitle",
+      "SubtitlePlaceholder": "Subtitle",
+      "Body": "Text",
+      "BodyPlaceholder": "Write here…",
+      "Style": "Style",
+      "Text": "Text",
+      "Quote": "Quote",
+      "Attribution": "Attribution",
+      "Image": "Image",
+      "ImageAlt": "Image description",
+      "ImageAltPlaceholder": "Describe the image",
+      "ImageSide": "Image side",
+      "Caption": "Caption",
+      "CaptionPlaceholder": "Caption",
+      "Rows": "Rows",
+      "Tags": "Tags",
+      "Stats": "Stats",
+      "Images": "Images",
+      "GalleryMode": "Layout",
+      "PortraitPosition": "Portrait",
+      "Density": "Density",
+      "InfoSide": "Info block"
+    },
+    "Layout": {
+      "ColumnPlaceholder": "Column content…",
+      "SidebarPlaceholder": "Sidebar…",
+      "ContentPlaceholder": "Main content…",
+      "CardTitle": "Card title",
+      "CardPlaceholder": "Card text…"
+    },
+    "Option": {
+      "side": {
+        "left": "Left",
+        "right": "Right"
+      },
+      "style": {
+        "ornament": "Ornament",
+        "line": "Line"
+      },
+      "mode": {
+        "uniform": "Uniform grid",
+        "portrait": "Portrait grid",
+        "landscape": "Landscape grid",
+        "feature": "Feature + grid",
+        "captioned": "Captioned"
+      },
+      "portrait": {
+        "left": "Left",
+        "right": "Right",
+        "top": "Top"
+      },
+      "density": {
+        "comfortable": "Comfortable",
+        "compact": "Compact"
+      },
+      "info-side": {
+        "right": "Right",
+        "left": "Left",
+        "full": "Full width"
+      },
+      "infobox": {
+        "right": "Right",
+        "left": "Left",
+        "full": "Full width",
+        "hidden": "Hidden from readers"
+      }
+    },
+    "Toolbar": {
+      "Label": "Block actions",
+      "Edit": "Edit block",
+      "Duplicate": "Duplicate block",
+      "Delete": "Delete block"
+    },
+    "Inspector": {
+      "Title": "Edit: {name}",
+      "General": "General",
+      "Options": "Options",
+      "Apply": "Apply",
+      "Cancel": "Cancel",
+      "AddImage": "Add image",
+      "RemoveImage": "Remove image",
+      "MoveUp": "Move up",
+      "MoveDown": "Move down",
+      "NoImages": "No images yet.",
+      "NothingToEdit": "This block has no settings. Edit its content directly in the Journal.",
+      "RichTextHint": "Text and nested blocks are edited directly in the Journal.",
+      "Sections": "Sections",
+      "Style": "Style",
+      "Preset": "Preset",
+      "DropSections": {
+        "Title": "Remove sections with content?",
+        "Content": "These sections have content that will be removed from the page: {sections}. Ctrl+Z in the editor restores it.",
+        "Confirm": "Remove"
+      },
+      "Links": {
+        "Add": "Add entry",
+        "Remove": "Remove entry",
+        "Drop": "Drop documents from the sidebar here",
+        "Empty": "No entries yet.",
+        "Uuid": "Document UUID",
+        "Label": "Label",
+        "Note": "Note",
+        "Open": "Open document"
+      }
+    },
+    "Npc": {
+      "Name": {
+        "Label": "Name",
+        "Placeholder": "Character name"
+      },
+      "Role": {
+        "Label": "Role",
+        "Placeholder": "Role in the story"
+      },
+      "Ancestry": {
+        "Label": "Ancestry",
+        "Placeholder": "Ancestry"
+      },
+      "Occupation": {
+        "Label": "Occupation",
+        "Placeholder": "Occupation"
+      },
+      "PortraitAlt": {
+        "Label": "Portrait description",
+        "Placeholder": "Portrait of the character"
+      },
+      "Summary": {
+        "Label": "Summary",
+        "Placeholder": "Who they are in two or three sentences."
+      },
+      "Personality": {
+        "Label": "Personality",
+        "Placeholder": "Temperament, habits and quirks"
+      },
+      "Goal": {
+        "Label": "Goal",
+        "Placeholder": "What they want"
+      },
+      "Location": {
+        "Label": "Location",
+        "Placeholder": "Where to find them"
+      },
+      "Notes": {
+        "Label": "Notes",
+        "Placeholder": "Hooks, services, prices…"
+      },
+      "Appearance": {
+        "Label": "Appearance",
+        "Placeholder": "How they look at first glance."
+      },
+      "Voice": {
+        "Label": "Voice & Mannerisms",
+        "Placeholder": "How they speak and move."
+      },
+      "Motivation": {
+        "Label": "Motivation",
+        "Placeholder": "What drives them."
+      },
+      "Goals": {
+        "Label": "Goals",
+        "Placeholder": "What they are working towards."
+      },
+      "Fears": {
+        "Label": "Fears",
+        "Placeholder": "What they avoid or dread."
+      },
+      "Relationships": {
+        "Label": "Relationships",
+        "Placeholder": "Allies, rivals, family and debts."
+      },
+      "Knowledge": {
+        "Label": "Knowledge",
+        "Placeholder": "What they know and may share."
+      },
+      "Rumours": {
+        "Label": "Rumours",
+        "Placeholder": "What people say about them."
+      },
+      "Secrets": {
+        "Label": "GM Secrets",
+        "Placeholder": "What the players must not know yet."
+      }
+    },
+    "Preset": {
+      "Editorial": "Editorial",
+      "Minimal": "Minimal",
+      "Arcane": "Arcane",
+      "Bestiary": "Bestiary"
+    },
+    "Location": {
+      "Name": {
+        "Label": "Name",
+        "Placeholder": "Location name"
+      },
+      "Kind": {
+        "Label": "Kind",
+        "Placeholder": "Settlement"
+      },
+      "Region": {
+        "Label": "Region",
+        "Placeholder": "Region"
+      },
+      "Summary": {
+        "Label": "Summary",
+        "Placeholder": "What makes this place memorable, in two or three sentences."
+      },
+      "Info": {
+        "Label": "At a glance"
+      },
+      "Type": {
+        "Label": "Type",
+        "Placeholder": "Port town"
+      },
+      "Population": {
+        "Label": "Population",
+        "Placeholder": "About 3,000"
+      },
+      "Government": {
+        "Label": "Government",
+        "Placeholder": "Merchant council"
+      },
+      "Climate": {
+        "Label": "Climate",
+        "Placeholder": "Temperate, foggy"
+      },
+      "Danger": {
+        "Label": "Danger",
+        "Placeholder": "Moderate"
+      },
+      "Description": {
+        "Label": "Description",
+        "Placeholder": "Streets, sounds, smells and daily life."
+      },
+      "Map": {
+        "Label": "Map",
+        "Placeholder": "Map caption"
+      },
+      "Poi": {
+        "Label": "Points of Interest",
+        "Placeholder": "Point of interest",
+        "Note": "Drag a Scene or Journal page onto this list in the block editor"
+      },
+      "Npcs": {
+        "Label": "Notable NPCs",
+        "Placeholder": "Notable resident",
+        "Note": "Drag an Actor onto this list in the block editor"
+      },
+      "Factions": {
+        "Label": "Factions",
+        "Placeholder": "Local faction",
+        "Note": "What they want here"
+      },
+      "Rumours": {
+        "Label": "Rumours",
+        "Placeholder": "What travellers whisper about this place."
+      },
+      "Secrets": {
+        "Label": "GM Secrets",
+        "Placeholder": "What the players must not know yet."
+      },
+      "Gallery": {
+        "Label": "Gallery"
+      }
+    },
+    "Wiki": {
+      "Title": {
+        "Label": "Title",
+        "Placeholder": "Article title"
+      },
+      "Subtitle": {
+        "Label": "Subtitle",
+        "Placeholder": "A short description"
+      },
+      "Type": {
+        "Label": "Type",
+        "Placeholder": "City"
+      },
+      "Region": {
+        "Label": "Region",
+        "Placeholder": "Northern reaches"
+      },
+      "Alignment": {
+        "Label": "Alignment",
+        "Placeholder": "Neutral"
+      },
+      "Population": {
+        "Label": "Population",
+        "Placeholder": "About 12,000"
+      },
+      "Infobox": {
+        "Label": "Infobox",
+        "HiddenHint": "Hidden from readers"
+      },
+      "Facts": {
+        "Label": "Custom rows",
+        "KeyPlaceholder": "Founded",
+        "ValuePlaceholder": "312 AR"
+      },
+      "Intro": {
+        "Label": "Introduction",
+        "Placeholder": "The lead: what this is and why it matters, in a few sentences."
+      },
+      "Contents": {
+        "Label": "Contents",
+        "Placeholder": "The contents list is built from the headings below when the page is read."
+      },
+      "Related": {
+        "Label": "Related entries",
+        "Placeholder": "Related entry"
+      },
+      "Article": {
+        "Heading1": "History",
+        "Text1": "Write the article here. Use Foundry's heading formats to start new sections.",
+        "Heading2": "Today",
+        "Text2": "Sections, lists, quotes, images and other Loreframe blocks all work here."
+      }
+    },
+    "Integration": {
+      "PortraitAlt": "Portrait of {name}",
+      "Dnd5e": {
+        "Challenge": "CR {cr}"
+      },
+      "InsertAs": {
+        "Title": "Insert Document",
+        "Hint": "How should {name} appear on this page? Blocks are a snapshot: later changes to the document do not update them.",
+        "Label": "Insert as",
+        "Link": "Standard Foundry link",
+        "Insert": "Insert"
+      }
+    },
+    "UserTemplates": {
+      "Template": "My template",
+      "Name": "Name",
+      "Description": "Description",
+      "BasedOn": "Based on",
+      "Hint": "My templates remember the preset, sections and options. Inserted blocks stay regular blocks of the base template.",
+      "CreateTitle": "Save as My Template",
+      "EditTitle": "Edit My Template",
+      "Save": "Save",
+      "SaveAs": "Save as template…",
+      "Customize": "Save as my template…",
+      "Edit": "Edit",
+      "Duplicate": "Duplicate",
+      "Delete": "Delete",
+      "Export": "Export",
+      "ExportAll": "Export all",
+      "Import": "Import…",
+      "CopyName": "{name} (copy)",
+      "DeleteTitle": "Delete my template?",
+      "DeleteContent": "“{name}” will be removed from your templates. Blocks already inserted stay unchanged.",
+      "Saved": "Template “{name}” saved.",
+      "Imported": "Imported {added} template(s), skipped {skipped}.",
+      "ImportFailed": "This file is not a valid Loreframe template package.",
+      "SaveFailed": "Could not save your templates.",
+      "NameRequired": "Enter a name for the template.",
+      "Missing": "This template is no longer available.",
+      "NothingToExport": "There are no templates to export."
+    },
+    "Migration": {
+      "Title": "Update block?",
+      "Content": "This block was made with an older version of its template. Update it to the current version to edit it? Ctrl+Z undoes the update.",
+      "Confirm": "Update"
+    }
+  }
+}

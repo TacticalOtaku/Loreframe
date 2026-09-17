@@ -1,0 +1,101 @@
+<div class="loreframe-inspector__body standard-form">
+  {{#if empty}}
+  <p class="loreframe-inspector__hint">{{localize "LOREFRAME.Inspector.NothingToEdit"}}</p>
+  {{/if}}
+
+  {{> "modules/loreframe/templates/applications/inspector-sections.hbs" idPrefix=(concat "loreframe-inspector-" instanceId)}}
+
+  {{#each lists}}
+  <fieldset class="loreframe-inspector__section loreframe-inspector__list" data-list="{{fieldId}}">
+    <legend>{{localize label}}</legend>
+    {{#if (eq kind "images")}}
+    {{#if images.length}}
+    <ol class="loreframe-inspector__item-list">
+      {{#each images}}
+      <li class="loreframe-inspector__item" data-index="{{index}}">
+        <img class="loreframe-inspector__thumb" src="{{preview}}" alt="" loading="lazy">
+        <div class="loreframe-inspector__item-fields">
+          <file-picker name="{{../fieldId}}.{{index}}.src" type="image" value="{{src}}"
+                       aria-label="{{localize "LOREFRAME.Field.Image"}}"></file-picker>
+          <input type="text" name="{{../fieldId}}.{{index}}.alt" value="{{alt}}"
+                 placeholder="{{localize "LOREFRAME.Field.ImageAlt"}}" aria-label="{{localize "LOREFRAME.Field.ImageAlt"}}">
+          <input type="text" name="{{../fieldId}}.{{index}}.caption" value="{{caption}}"
+                 placeholder="{{localize "LOREFRAME.Field.Caption"}}" aria-label="{{localize "LOREFRAME.Field.Caption"}}">
+        </div>
+        <div class="loreframe-inspector__item-controls">
+          <button type="button" id="loreframe-inspector-{{../fieldId}}-up-{{index}}" data-action="moveItemUp" {{#if first}}disabled{{/if}}
+                  aria-label="{{localize "LOREFRAME.Inspector.MoveUp"}}" data-tooltip="{{localize "LOREFRAME.Inspector.MoveUp"}}">
+            <i class="fa-solid fa-arrow-up fa-fw" aria-hidden="true"></i>
+          </button>
+          <button type="button" id="loreframe-inspector-{{../fieldId}}-down-{{index}}" data-action="moveItemDown" {{#if last}}disabled{{/if}}
+                  aria-label="{{localize "LOREFRAME.Inspector.MoveDown"}}" data-tooltip="{{localize "LOREFRAME.Inspector.MoveDown"}}">
+            <i class="fa-solid fa-arrow-down fa-fw" aria-hidden="true"></i>
+          </button>
+          <button type="button" data-action="removeItem"
+                  aria-label="{{localize "LOREFRAME.Inspector.RemoveImage"}}" data-tooltip="{{localize "LOREFRAME.Inspector.RemoveImage"}}">
+            <i class="fa-solid fa-trash fa-fw" aria-hidden="true"></i>
+          </button>
+        </div>
+      </li>
+      {{/each}}
+    </ol>
+    {{else}}
+    <p class="loreframe-inspector__hint">{{localize "LOREFRAME.Inspector.NoImages"}}</p>
+    {{/if}}
+    <button type="button" id="loreframe-inspector-add-{{fieldId}}" class="loreframe-inspector__add" data-action="addItem">
+      <i class="fa-solid fa-plus" aria-hidden="true"></i>
+      <span>{{localize "LOREFRAME.Inspector.AddImage"}}</span>
+    </button>
+    {{else}}
+    <div class="loreframe-inspector__links" data-drop-list="{{fieldId}}">
+      {{#if links.length}}
+      <ol class="loreframe-inspector__item-list">
+        {{#each links}}
+        <li class="loreframe-inspector__item loreframe-inspector__item--link" data-index="{{index}}">
+          <i class="loreframe-inspector__link-icon fa-solid {{#if linked}}fa-link{{else}}fa-link-slash{{/if}} fa-fw"
+             aria-hidden="true"></i>
+          <div class="loreframe-inspector__item-fields">
+            <input type="text" name="{{../fieldId}}.{{index}}.label" value="{{label}}"
+                   placeholder="{{localize "LOREFRAME.Inspector.Links.Label"}}" aria-label="{{localize "LOREFRAME.Inspector.Links.Label"}}">
+            <input type="text" name="{{../fieldId}}.{{index}}.note" value="{{note}}"
+                   placeholder="{{localize "LOREFRAME.Inspector.Links.Note"}}" aria-label="{{localize "LOREFRAME.Inspector.Links.Note"}}">
+            <input type="text" class="loreframe-inspector__uuid" name="{{../fieldId}}.{{index}}.uuid" value="{{uuid}}"
+                   placeholder="{{localize "LOREFRAME.Inspector.Links.Uuid"}}" aria-label="{{localize "LOREFRAME.Inspector.Links.Uuid"}}">
+          </div>
+          <div class="loreframe-inspector__item-controls">
+          <button type="button" id="loreframe-inspector-{{../fieldId}}-up-{{index}}" data-action="moveItemUp" {{#if first}}disabled{{/if}}
+                  aria-label="{{localize "LOREFRAME.Inspector.MoveUp"}}" data-tooltip="{{localize "LOREFRAME.Inspector.MoveUp"}}">
+            <i class="fa-solid fa-arrow-up fa-fw" aria-hidden="true"></i>
+          </button>
+          <button type="button" id="loreframe-inspector-{{../fieldId}}-down-{{index}}" data-action="moveItemDown" {{#if last}}disabled{{/if}}
+                  aria-label="{{localize "LOREFRAME.Inspector.MoveDown"}}" data-tooltip="{{localize "LOREFRAME.Inspector.MoveDown"}}">
+            <i class="fa-solid fa-arrow-down fa-fw" aria-hidden="true"></i>
+          </button>
+          <button type="button" data-action="removeItem"
+                  aria-label="{{localize "LOREFRAME.Inspector.Links.Remove"}}" data-tooltip="{{localize "LOREFRAME.Inspector.Links.Remove"}}">
+            <i class="fa-solid fa-trash fa-fw" aria-hidden="true"></i>
+          </button>
+        </div>
+        </li>
+        {{/each}}
+      </ol>
+      {{else}}
+      <p class="loreframe-inspector__hint">{{localize "LOREFRAME.Inspector.Links.Empty"}}</p>
+      {{/if}}
+      <p class="loreframe-inspector__drop-hint">
+        <i class="fa-solid fa-hand-pointer" aria-hidden="true"></i>
+        {{localize "LOREFRAME.Inspector.Links.Drop"}}
+      </p>
+    </div>
+    <button type="button" id="loreframe-inspector-add-{{fieldId}}" class="loreframe-inspector__add" data-action="addLink">
+      <i class="fa-solid fa-plus" aria-hidden="true"></i>
+      <span>{{localize "LOREFRAME.Inspector.Links.Add"}}</span>
+    </button>
+    {{/if}}
+  </fieldset>
+  {{/each}}
+
+  {{#if richTextHint}}
+  <p class="loreframe-inspector__hint">{{localize "LOREFRAME.Inspector.RichTextHint"}}</p>
+  {{/if}}
+</div>
