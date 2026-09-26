@@ -3,7 +3,7 @@
   <p class="loreframe-inspector__hint">{{localize "LOREFRAME.Inspector.NothingToEdit"}}</p>
   {{/if}}
 
-  {{> "modules/loreframe/templates/applications/inspector-sections.hbs" idPrefix=(concat "loreframe-inspector-" instanceId)}}
+  {{> "modules/loreframe/templates/applications/inspector-sections.hbs" idPrefix=idPrefix}}
 
   {{#each lists}}
   <fieldset class="loreframe-inspector__section loreframe-inspector__list" data-list="{{fieldId}}">
@@ -23,11 +23,11 @@
                  placeholder="{{localize "LOREFRAME.Field.Caption"}}" aria-label="{{localize "LOREFRAME.Field.Caption"}}">
         </div>
         <div class="loreframe-inspector__item-controls">
-          <button type="button" id="loreframe-inspector-{{../fieldId}}-up-{{index}}" data-action="moveItemUp" {{#if first}}disabled{{/if}}
+          <button type="button" id="{{@root.idPrefix}}-{{../fieldId}}-up-{{index}}" data-action="moveItemUp" {{#if first}}disabled{{/if}}
                   aria-label="{{localize "LOREFRAME.Inspector.MoveUp"}}" data-tooltip="{{localize "LOREFRAME.Inspector.MoveUp"}}">
             <i class="fa-solid fa-arrow-up fa-fw" aria-hidden="true"></i>
           </button>
-          <button type="button" id="loreframe-inspector-{{../fieldId}}-down-{{index}}" data-action="moveItemDown" {{#if last}}disabled{{/if}}
+          <button type="button" id="{{@root.idPrefix}}-{{../fieldId}}-down-{{index}}" data-action="moveItemDown" {{#if last}}disabled{{/if}}
                   aria-label="{{localize "LOREFRAME.Inspector.MoveDown"}}" data-tooltip="{{localize "LOREFRAME.Inspector.MoveDown"}}">
             <i class="fa-solid fa-arrow-down fa-fw" aria-hidden="true"></i>
           </button>
@@ -42,7 +42,7 @@
     {{else}}
     <p class="loreframe-inspector__hint">{{localize "LOREFRAME.Inspector.NoImages"}}</p>
     {{/if}}
-    <button type="button" id="loreframe-inspector-add-{{fieldId}}" class="loreframe-inspector__add" data-action="addItem">
+    <button type="button" id="{{@root.idPrefix}}-add-{{fieldId}}" class="loreframe-inspector__add" data-action="addItem">
       <i class="fa-solid fa-plus" aria-hidden="true"></i>
       <span>{{localize "LOREFRAME.Inspector.AddImage"}}</span>
     </button>
@@ -63,11 +63,11 @@
                    placeholder="{{localize "LOREFRAME.Inspector.Links.Uuid"}}" aria-label="{{localize "LOREFRAME.Inspector.Links.Uuid"}}">
           </div>
           <div class="loreframe-inspector__item-controls">
-          <button type="button" id="loreframe-inspector-{{../fieldId}}-up-{{index}}" data-action="moveItemUp" {{#if first}}disabled{{/if}}
+          <button type="button" id="{{@root.idPrefix}}-{{../fieldId}}-up-{{index}}" data-action="moveItemUp" {{#if first}}disabled{{/if}}
                   aria-label="{{localize "LOREFRAME.Inspector.MoveUp"}}" data-tooltip="{{localize "LOREFRAME.Inspector.MoveUp"}}">
             <i class="fa-solid fa-arrow-up fa-fw" aria-hidden="true"></i>
           </button>
-          <button type="button" id="loreframe-inspector-{{../fieldId}}-down-{{index}}" data-action="moveItemDown" {{#if last}}disabled{{/if}}
+          <button type="button" id="{{@root.idPrefix}}-{{../fieldId}}-down-{{index}}" data-action="moveItemDown" {{#if last}}disabled{{/if}}
                   aria-label="{{localize "LOREFRAME.Inspector.MoveDown"}}" data-tooltip="{{localize "LOREFRAME.Inspector.MoveDown"}}">
             <i class="fa-solid fa-arrow-down fa-fw" aria-hidden="true"></i>
           </button>
@@ -87,7 +87,7 @@
         {{localize "LOREFRAME.Inspector.Links.Drop"}}
       </p>
     </div>
-    <button type="button" id="loreframe-inspector-add-{{fieldId}}" class="loreframe-inspector__add" data-action="addLink">
+    <button type="button" id="{{@root.idPrefix}}-add-{{fieldId}}" class="loreframe-inspector__add" data-action="addLink">
       <i class="fa-solid fa-plus" aria-hidden="true"></i>
       <span>{{localize "LOREFRAME.Inspector.Links.Add"}}</span>
     </button>

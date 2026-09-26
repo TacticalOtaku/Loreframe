@@ -29,6 +29,7 @@ Click inside a block to show its toolbar: **Edit**, **Duplicate**, **Delete**.
   and <kbd>Esc</kbd> returns to the text.
 - **Edit** opens the block inspector. It holds the block's properties: names, images and alt text, gallery images,
   Foundry links, optional sections, and the style (preset, portrait position, density, infobox placement).
+- **Delete** asks for confirmation for layouts, structures and blocks with your writing in them.
 - **Rich text is always edited directly in the page.** Switching off a section that contains your writing asks for
   confirmation first; <kbd>Ctrl</kbd>+<kbd>Z</kbd> brings it back.
 

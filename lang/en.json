@@ -265,7 +265,9 @@
       "Label": "Block actions",
       "Edit": "Edit block",
       "Duplicate": "Duplicate block",
-      "Delete": "Delete block"
+      "Delete": "Delete block",
+      "DeleteTitle": "Delete block?",
+      "DeleteContent": "“{name}” and everything written in it will be removed. Ctrl+Z restores it until the page is saved."
     },
     "Inspector": {
       "Title": "Edit: {name}",
@@ -297,7 +299,8 @@
         "Label": "Label",
         "Note": "Note",
         "Open": "Open document"
-      }
+      },
+      "MovedOut": "{count} piece(s) of text written outside the block's fields were kept and moved below the block."
     },
     "Npc": {
       "Name": {
