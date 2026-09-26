@@ -80,13 +80,18 @@ var logger = {
 /**
 * Foundry content links as stored in Journal text: `@UUID[uuid]{label}`. Foundry inserts exactly this text when a
 * document is dropped into the editor (common/prosemirror/content-link-plugin.mjs) and enriches it on display.
+* The patterns mirror Foundry's enricher (client/applications/ux/text-editor.mjs): the uuid may carry a
+* "#heading" anchor and only "}" ends a label.
 */
-var UUID_PATTERN = /^[A-Za-z0-9._-]+$/;
+var UUID_PATTERN = /^[^#\]\s{}]+(?:#[^\]\s]+)?$/;
 var LINK_PATTERN = /^@UUID\[([^\]]+)\](?:\{([^}]*)\})?$/;
-/** The link text for an item, or its plain label when it has no usable uuid. */
+/**
+* The link text for an item. Without a usable uuid the label is returned exactly as written: it may be text the
+* author typed around a link, rolls or other enrichers, and must survive a rebuild unchanged.
+*/
 function formatLink(item) {
-	const label = item.label.replace(/[[\]{}]/g, "").trim();
-	if (!UUID_PATTERN.test(item.uuid)) return label;
+	if (!UUID_PATTERN.test(item.uuid)) return item.label.trim();
+	const label = item.label.replace(/}/g, "").trim();
 	return label ? `@UUID[${item.uuid}]{${label}}` : `@UUID[${item.uuid}]`;
 }
 /** Read a link back from its text; anything else is a plain label. */
@@ -686,6 +691,7 @@ function readTemplateEditorForm(definition, form, presets) {
 var TEMPLATE_DIR$2 = `modules/${MODULE_ID}/templates/applications`;
 var SECTIONS_PARTIAL = `${TEMPLATE_DIR$2}/inspector-sections.hbs`;
 var editorClass;
+var editing = /* @__PURE__ */ new Map();
 /** Open "My Template" settings (spec §32): name, preset, sections and options — never content. */
 function openTemplateEditor(runtime, request) {
 	const state = resolveRequest(runtime, request);
@@ -693,8 +699,15 @@ function openTemplateEditor(runtime, request) {
 		ui.notifications.warn("LOREFRAME.UserTemplates.Missing", { localize: true });
 		return;
 	}
+	const existing = state.id ? editing.get(state.id) : void 0;
+	if (existing?.rendered) {
+		existing.bringToFront();
+		return;
+	}
 	editorClass ??= defineTemplateEditor();
-	new editorClass(runtime, state).render({ force: true });
+	const app = new editorClass(runtime, state);
+	if (state.id) editing.set(state.id, app);
+	app.render({ force: true });
 }
 function resolveRequest(runtime, request) {
 	if (request.mode === "edit") {
@@ -761,6 +774,10 @@ function defineTemplateEditor() {
 			});
 			this.#runtime = runtime;
 			this.#state = state;
+		}
+		async close(options) {
+			if (this.#state.id && editing.get(this.#state.id) === this) editing.delete(this.#state.id);
+			return super.close(options);
 		}
 		async _prepareContext() {
 			const { definition, name, description, preset, values } = this.#state;
@@ -1057,6 +1074,7 @@ function defineTemplateLibrary() {
 			this.#unsubscribe = null;
 			this.#unwatchEditors?.();
 			this.#unwatchEditors = null;
+			clearTimeout(this.#searchTimer);
 			return super.close(options);
 		}
 		setTarget(target) {
@@ -1087,7 +1105,7 @@ function defineTemplateLibrary() {
 				if (this.rendered && this.#insertTarget() !== null !== this.#couldInsert) this.render({ parts: ["preview"] });
 			});
 			this.#state.selectedId = model.selected?.id ?? null;
-			if (model.preset !== null) this.#state.preset = model.preset;
+			if (model.preset !== null && !model.selected?.mine) this.#state.preset = model.preset;
 			return {
 				...model,
 				query: this.#state.query,
@@ -1235,6 +1253,7 @@ function defineTemplateLibrary() {
 			}) !== true) return;
 			await this.#changeUserTemplates(async (store) => {
 				await store.remove(template.id);
+				await this.#runtime.preferences.forget(template.id);
 				this.#state.selectedId = null;
 			});
 		}
@@ -1350,6 +1369,494 @@ function getSetting(key) {
 	return game.settings.get(MODULE_ID, key);
 }
 //#endregion
+//#region src/core/template-parser.ts
+var BLOCK_SELECTOR = `[${DATA_ATTR.template}]`;
+var FIELD_SELECTOR = `[${DATA_ATTR.field}]`;
+/** Template versions are positive integers (TemplateRegistry). */
+var VERSION_PATTERN = /^[1-9]\d*$/;
+/**
+* Find Loreframe blocks under `root` (inclusive) in document order. Identification relies only on
+* `data-loreframe-*` attributes, never on styling classes (spec §10). Nothing is modified.
+*/
+function parseBlocks(root, templates) {
+	const elements = [...root.querySelectorAll(BLOCK_SELECTOR)];
+	if (root instanceof Element && root.matches(BLOCK_SELECTOR)) elements.unshift(root);
+	return elements.map((element) => parseBlock(element, templates));
+}
+function parseBlock(element, templates) {
+	const templateId = element.getAttribute(DATA_ATTR.template) ?? "";
+	const rawVersion = element.getAttribute(DATA_ATTR.version);
+	const version = rawVersion !== null && VERSION_PATTERN.test(rawVersion) ? Number(rawVersion) : null;
+	return {
+		element,
+		templateId,
+		version,
+		instanceId: element.getAttribute(DATA_ATTR.instance),
+		preset: element.getAttribute(DATA_ATTR.preset),
+		status: statusOf(templateId, version, templates),
+		fields: ownFields(element)
+	};
+}
+function statusOf(templateId, version, templates) {
+	const definition = templates.get(templateId);
+	if (!definition) return "unknown";
+	if (version === null) return "invalid";
+	if (version < definition.version) return "outdated";
+	if (version > definition.version) return "newer";
+	return "current";
+}
+/** Field elements whose nearest enclosing block is `block`. First occurrence of a field name wins. */
+function ownFields(block) {
+	const fields = /* @__PURE__ */ new Map();
+	for (const field of block.querySelectorAll(FIELD_SELECTOR)) {
+		if (field.parentElement?.closest(BLOCK_SELECTOR) !== block) continue;
+		const name = field.getAttribute(DATA_ATTR.field) ?? "";
+		if (!fields.has(name)) fields.set(name, field);
+	}
+	return fields;
+}
+//#endregion
+//#region src/editor/node-attrs.ts
+function getHtmlAttribute(node, name) {
+	const preserved = node.attrs._preserve;
+	if (typeof preserved !== "object" || preserved === null) return void 0;
+	const value = preserved[name];
+	return typeof value === "string" ? value : void 0;
+}
+/** The node's HTML classes (AttributeCapture keeps them in the `classes` attr, separately from `_preserve`). */
+function getHtmlClasses(node) {
+	const classes = node.attrs.classes;
+	return typeof classes === "string" ? classes.split(/\s+/).filter(Boolean) : [];
+}
+/** Whether the node is the root element of a Loreframe block. */
+function isLoreframeRoot(node) {
+	return getHtmlAttribute(node, DATA_ATTR.template) !== void 0;
+}
+/** Whether the node is a slot region inside a block, where other blocks may be nested. */
+function isLoreframeSlot(node) {
+	return getHtmlAttribute(node, DATA_ATTR.slot) !== void 0;
+}
+/** Node attrs with one HTML attribute replaced, for `tr.setNodeMarkup`. */
+function withHtmlAttribute(node, name, value) {
+	const preserved = node.attrs._preserve;
+	const base = typeof preserved === "object" && preserved !== null ? preserved : {};
+	return {
+		...node.attrs,
+		_preserve: {
+			...base,
+			[name]: value
+		}
+	};
+}
+/** Foundry's secret node (common/prosemirror/schema/secret-node.mjs). */
+function isFoundrySecret(node) {
+	return node.type.name === "secret";
+}
+/** A secret that exists only to hide one Loreframe block (see TemplateRenderer). It belongs to that block. */
+function isSecretWrapper(node) {
+	return isFoundrySecret(node) && node.childCount === 1 && node.firstChild !== null && isLoreframeRoot(node.firstChild);
+}
+/** Identifiers that must stay unique in a document: block instance ids and Foundry secret ids. */
+function identityOf(node) {
+	const instance = getHtmlAttribute(node, DATA_ATTR.instance);
+	if (instance) return {
+		key: `instance:${instance}`,
+		renamed: (freshId) => withHtmlAttribute(node, DATA_ATTR.instance, freshId)
+	};
+	const secretId = isFoundrySecret(node) ? node.attrs.id : void 0;
+	if (typeof secretId === "string" && secretId) return {
+		key: `secret:${secretId}`,
+		renamed: (freshId) => ({
+			...node.attrs,
+			id: `secret-${freshId}`
+		})
+	};
+	return null;
+}
+//#endregion
+//#region src/editor/block-document.ts
+function locationFor(root, rootPos, $root) {
+	const wrapped = $root.depth > 0 && isSecretWrapper($root.parent);
+	return {
+		templateId: getHtmlAttribute(root, DATA_ATTR.template) ?? "",
+		instanceId: getHtmlAttribute(root, DATA_ATTR.instance) ?? "",
+		root,
+		rootPos,
+		host: wrapped ? $root.parent : root,
+		hostPos: wrapped ? $root.before() : rootPos
+	};
+}
+/** The block with the given instance id, or null when it no longer exists. */
+function locateBlock(doc, instanceId) {
+	let found = null;
+	doc.descendants((node, pos) => {
+		if (found) return false;
+		if (isLoreframeRoot(node) && getHtmlAttribute(node, DATA_ATTR.instance) === instanceId) {
+			found = locationFor(node, pos, doc.resolve(pos));
+			return false;
+		}
+		return true;
+	});
+	return found;
+}
+/** The innermost block that contains `$pos` (slots do not stop the search: the toolbar targets the nearest block). */
+function blockAt($pos) {
+	for (let depth = $pos.depth; depth > 0; depth--) {
+		const node = $pos.node(depth);
+		if (isLoreframeRoot(node)) {
+			const rootPos = $pos.before(depth);
+			return locationFor(node, rootPos, $pos.doc.resolve(rootPos));
+		}
+	}
+	return null;
+}
+/**
+* How a block's stored version relates to its registered template (same rules as the template parser). Only
+* current blocks may be rebuilt: rendering a newer or invalid block with this template would destroy its markup.
+*/
+function blockVersionState(root, definition) {
+	const raw = getHtmlAttribute(root, DATA_ATTR.version);
+	if (raw === void 0 || !VERSION_PATTERN.test(raw)) return "invalid";
+	const version = Number(raw);
+	if (version === definition.version) return "current";
+	return version < definition.version ? "outdated" : "newer";
+}
+/**
+* Bring one outdated block (with its secret wrapper) to the current template version (spec §46). The migration runs
+* on a copy of the block's HTML; on any issue the document is left untouched.
+*/
+function migrateBlockTransaction(state, location, deps) {
+	const result = deps.migrations.migrateHtml(deps.serialize(location.host));
+	const issue = result.issues.find((entry) => entry.instanceId === location.instanceId);
+	if (issue) return {
+		ok: false,
+		issue: issue.kind
+	};
+	const migrated = result.changed ? deps.parse(result.html) : null;
+	if (!migrated || migrated.childCount !== 1 || !migrated.firstChild) return {
+		ok: false,
+		issue: "unchanged"
+	};
+	const { hostPos, host } = location;
+	return {
+		ok: true,
+		tr: state.tr.replaceWith(hostPos, hostPos + host.nodeSize, migrated.firstChild)
+	};
+}
+/** The first node inside `root` named `name` (field or slot), not looking into nested blocks. */
+function findRegion(root, name, attr) {
+	let found = null;
+	root.descendants((node) => {
+		if (found) return false;
+		if (isLoreframeRoot(node)) return false;
+		if (getHtmlAttribute(node, attr) === name) {
+			found = node;
+			return false;
+		}
+		return true;
+	});
+	return found;
+}
+/** Every node inside `root` named `name` (field or slot), not looking into nested blocks or into the matches. */
+function findRegions(root, name, attr) {
+	const found = [];
+	root.descendants((node) => {
+		if (isLoreframeRoot(node)) return false;
+		if (getHtmlAttribute(node, attr) !== name) return true;
+		found.push(node);
+		return false;
+	});
+	return found;
+}
+function firstImage(node) {
+	let found = null;
+	node.descendants((child) => {
+		if (found) return false;
+		if (child.type.name === "image") found = child;
+		return !found;
+	});
+	return found;
+}
+function imageSource(image) {
+	const src = image?.attrs.src;
+	return typeof src === "string" && src !== PLACEHOLDER_IMAGE ? src : "";
+}
+function textAttr(node, name) {
+	const value = node?.attrs[name];
+	return typeof value === "string" ? value : "";
+}
+function readItems(region) {
+	const items = [];
+	region.forEach((figure) => {
+		if (figure.type.name !== "figure") return;
+		const image = firstImage(figure);
+		let caption = "";
+		figure.forEach((child) => {
+			if (child.type.name === "figcaption") caption = child.textContent;
+		});
+		items.push({
+			src: imageSource(image),
+			alt: textAttr(image, "alt"),
+			caption
+		});
+	});
+	return items;
+}
+function readLinks(region) {
+	const items = [];
+	region.forEach((item) => {
+		if (item.type.name !== "list_item") return;
+		const paragraphs = [];
+		item.descendants((child) => {
+			if (!child.isTextblock) return true;
+			paragraphs.push(child.textContent);
+			return false;
+		});
+		const [link = "", ...notes] = paragraphs;
+		const parsed = parseLink(link);
+		if (!parsed.uuid && !parsed.label) return;
+		items.push({
+			...parsed,
+			note: notes.join(" ").trim()
+		});
+	});
+	return items;
+}
+/**
+* Property values of a block as stored in the document. Rich-text fields are not read: they are edited in the
+* Journal editor and preserved by `rebuildBlockTransaction`.
+*/
+function readBlockValues(root, definition) {
+	const values = {};
+	for (const field of definition.fields ?? []) switch (field.type) {
+		case "select":
+		case "boolean": {
+			const raw = getHtmlAttribute(root, `${DATA_ATTR.optionPrefix}${field.id}`);
+			if (raw === void 0) break;
+			values[field.id] = field.type === "boolean" ? raw === "true" : raw;
+			break;
+		}
+		case "image": {
+			const region = findRegion(root, field.id, DATA_ATTR.field);
+			if (region) values[field.id] = imageSource(firstImage(region));
+			break;
+		}
+		case "text": {
+			if (field.imageAltFor) {
+				const region = findRegion(root, field.imageAltFor, DATA_ATTR.field);
+				if (region) values[field.id] = textAttr(firstImage(region), "alt");
+				break;
+			}
+			const regions = findRegions(root, field.id, DATA_ATTR.field);
+			values[field.id] = regions.length > 1 ? regions.map((region) => region.textContent.trim()).filter(Boolean).join(" ") : regions[0]?.textContent ?? "";
+			break;
+		}
+		case "items": {
+			const region = findRegion(root, field.id, DATA_ATTR.field);
+			if (region) values[field.id] = readItems(region);
+			break;
+		}
+		case "links": {
+			const region = findRegion(root, field.id, DATA_ATTR.field);
+			values[field.id] = region ? readLinks(region) : [];
+			break;
+		}
+	}
+	return values;
+}
+/** Structural equality that ignores identifiers generated while parsing (Foundry secret ids). */
+function sameContent(a, b) {
+	if (a.type !== b.type || a.childCount !== b.childCount || !sameMarks(a, b)) return false;
+	if (a.isText) return a.text === b.text;
+	const comparable = (node) => JSON.stringify(isFoundrySecret(node) ? {
+		...node.attrs,
+		id: null
+	} : node.attrs);
+	if (comparable(a) !== comparable(b)) return false;
+	for (let i = 0; i < a.childCount; i++) if (!sameContent(a.child(i), b.child(i))) return false;
+	return true;
+}
+function sameMarks(a, b) {
+	return a.marks.length === b.marks.length && a.marks.every((mark, i) => b.marks[i]?.eq(mark) === true);
+}
+/** Whether a region holds anything worth keeping: text, images or nested blocks. */
+function hasContent(region) {
+	if (region.textContent.trim()) return true;
+	let found = false;
+	region.descendants((node) => {
+		if (node.type.name === "image" || isLoreframeRoot(node)) found = true;
+		return !found;
+	});
+	return found;
+}
+/**
+* Rich-text fields and slots the author has changed: they hold content and differ from the same region of
+* `fresh` (the block rendered with default values). Used to confirm before a toggle removes them.
+*/
+function writtenRegions(root, fresh, definition) {
+	return [...(definition.fields ?? []).filter((f) => f.type === "richText").map((f) => [f.id, DATA_ATTR.field]), ...(definition.slots ?? []).map((slot) => [slot, DATA_ATTR.slot])].filter(([id, attr]) => {
+		const written = findRegion(root, id, attr);
+		if (!written || !hasContent(written)) return false;
+		const original = findRegion(fresh, id, attr);
+		return !original || !sameContent(written, original);
+	}).map(([id]) => id);
+}
+var sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+/**
+* Property fields whose region can be taken over from `old` as it is: the edit left their value unchanged, so the
+* author's inline formatting, links and extra structure in them survive. A field split into several regions is
+* rebuilt from its joined value instead, so no half is dropped.
+*/
+function unchangedFields(fresh, old, definition) {
+	const fields = definition.fields ?? [];
+	const oldValues = readBlockValues(old, definition);
+	const freshValues = readBlockValues(fresh, definition);
+	const same = (id) => sameJson(oldValues[id], freshValues[id]);
+	const kept = /* @__PURE__ */ new Set();
+	for (const field of fields) {
+		if (![
+			"text",
+			"image",
+			"items",
+			"links"
+		].includes(field.type) || field.imageAltFor) continue;
+		if (findRegions(old, field.id, DATA_ATTR.field).length !== 1) continue;
+		const bound = fields.filter((other) => other.imageAltFor === field.id).map((other) => other.id);
+		if (same(field.id) && bound.every(same)) kept.add(field.id);
+	}
+	return kept;
+}
+/**
+* `fresh` is the block rendered with new values. Every rich-text field and slot, and every property region whose
+* value did not change, is replaced by the matching region of `old`, so the author's writing, formatting and nested
+* blocks survive property edits.
+*/
+function graftBlock(fresh, old, definition) {
+	const keptFields = /* @__PURE__ */ new Set([...(definition.fields ?? []).filter((f) => f.type === "richText").map((f) => f.id), ...unchangedFields(fresh, old, definition)]);
+	const slots = new Set(definition.slots ?? []);
+	const graft = (node) => {
+		const field = getHtmlAttribute(node, DATA_ATTR.field);
+		const slot = getHtmlAttribute(node, DATA_ATTR.slot);
+		const kept = field !== void 0 && keptFields.has(field) && findRegion(old, field, DATA_ATTR.field) || slot !== void 0 && slots.has(slot) && findRegion(old, slot, DATA_ATTR.slot);
+		if (kept && node.type.validContent(kept.content)) return node.copy(kept.content);
+		let content = node.content;
+		node.forEach((child, _offset, index) => {
+			const next = graft(child);
+			if (next !== child) content = content.replaceChild(index, next);
+		});
+		return content === node.content ? node : node.copy(content);
+	};
+	return graft(fresh);
+}
+/** Replace a block with a freshly rendered version of itself (`freshHost` as parsed, wrapper included). */
+function rebuildBlockTransaction(state, location, freshHost, definition, pm) {
+	const freshWrapped = isSecretWrapper(freshHost);
+	const grafted = graftBlock((freshWrapped ? freshHost.firstChild : freshHost) ?? freshHost, location.root, definition);
+	let host = grafted;
+	if (location.host !== location.root) host = location.host.copy(location.host.content.replaceChild(0, grafted));
+	else if (freshWrapped) host = freshHost.copy(freshHost.content.replaceChild(0, grafted));
+	const tr = state.tr.replaceWith(location.hostPos, location.hostPos + location.host.nodeSize, host);
+	const parent = state.doc.resolve(location.hostPos).parent;
+	const orphans = writingOutsideFields(location.root).flatMap((node) => fitInto(parent, node));
+	if (orphans.length) tr.insert(location.hostPos + host.nodeSize, orphans);
+	tr.setMeta(MOVED_OUT, orphans.length);
+	return tr.setSelection(pm.Selection.near(tr.doc.resolve(location.hostPos + 1)));
+}
+var MOVED_OUT = "loreframeMovedOut";
+/** How many pieces of the author's writing a rebuild moved below the block. */
+function movedOutOfBlock(tr) {
+	const value = tr.getMeta(MOVED_OUT);
+	return typeof value === "number" ? value : 0;
+}
+var TEMPLATE_CLASS = /^loreframe[a-z0-9_-]*$/;
+/**
+* Nodes inside a block root that belong to no field or slot and were not produced by the template: renderer output
+* outside fields always carries a `loreframe*` class (checked for every built-in template in the tests).
+* Returns the outermost such nodes in document order.
+*/
+function writingOutsideFields(root) {
+	const found = [];
+	const visit = (node) => {
+		node.forEach((child) => {
+			if (child.isText || child.isInline) return;
+			if (getHtmlAttribute(child, DATA_ATTR.field) !== void 0 || getHtmlAttribute(child, DATA_ATTR.slot) !== void 0) return;
+			const templateNode = getHtmlClasses(child).some((cls) => TEMPLATE_CLASS.test(cls));
+			if (templateNode && !isLoreframeRoot(child)) visit(child);
+			else if (!templateNode && (child.textContent.trim() || hasContent(child))) found.push(child);
+			else if (isLoreframeRoot(child)) found.push(child);
+		});
+	};
+	visit(root);
+	return found;
+}
+/** The node itself when the block's parent accepts it, otherwise its text as a paragraph. */
+function fitInto(parent, node) {
+	if (parent.type.contentMatch.matchType(node.type)) return [node];
+	const { schema } = parent.type;
+	const text = node.textContent.trim();
+	return schema.nodes.paragraph && text ? [schema.nodes.paragraph.create(null, schema.text(text))] : [];
+}
+/** Insert a copy of the block right after it, with new instance and secret ids. */
+function duplicateBlockTransaction(state, location, newId) {
+	const start = location.hostPos + location.host.nodeSize;
+	const tr = state.tr.insert(start, location.host);
+	tr.doc.nodesBetween(start, start + location.host.nodeSize, (node, pos) => {
+		if (pos < start) return true;
+		const identity = identityOf(node);
+		if (identity) tr.setNodeMarkup(pos, void 0, identity.renamed(newId()));
+		return true;
+	});
+	return tr;
+}
+/** Remove the block (and its secret wrapper). The document never ends up empty. */
+function deleteBlockTransaction(state, location, pm) {
+	const from = location.hostPos;
+	const to = from + location.host.nodeSize;
+	const tr = state.tr;
+	const $from = state.doc.resolve(from);
+	const paragraph = state.schema.nodes.paragraph;
+	if ($from.parent.childCount === 1 && paragraph) {
+		tr.replaceWith(from, to, paragraph.create());
+		return tr.setSelection(pm.TextSelection.create(tr.doc, from + 1));
+	}
+	tr.delete(from, to);
+	return tr.setSelection(pm.Selection.near(tr.doc.resolve(Math.min(from, tr.doc.content.size)), -1));
+}
+//#endregion
+//#region src/applications/block-actions.ts
+/**
+* Delete from the block toolbar. Layouts and page structures, blocks with the author's writing and blocks of unknown
+* templates are only deleted after confirmation: undo does not survive saving the page.
+*/
+async function deleteBlockWithConfirmation(runtime, view, instanceId) {
+	const block = runtime.readBlock(view, instanceId);
+	if (!block || block.definition.type !== "block" || runtime.writtenFields(view, instanceId).length > 0 || containsBlocks(view, instanceId)) {
+		const name = block ? game.i18n.localize(block.definition.name) : instanceId;
+		if (await foundry.applications.api.DialogV2.confirm({
+			window: {
+				title: game.i18n.localize("LOREFRAME.Toolbar.DeleteTitle"),
+				icon: "fa-solid fa-trash"
+			},
+			content: `<p>${game.i18n.format("LOREFRAME.Toolbar.DeleteContent", { name: escapeHtml(name) })}</p>`,
+			modal: true,
+			yes: {
+				label: game.i18n.localize("LOREFRAME.Toolbar.Delete"),
+				icon: "fa-solid fa-trash"
+			}
+		}) !== true) return false;
+	}
+	return runtime.deleteBlock(view, instanceId);
+}
+function containsBlocks(view, instanceId) {
+	const root = locateBlock(view.state.doc, instanceId)?.root;
+	let found = false;
+	root?.descendants((node) => {
+		if (isLoreframeRoot(node)) found = true;
+		return !found;
+	});
+	return found;
+}
+//#endregion
 //#region src/applications/block-inspector/block-inspector.ts
 var TEMPLATE_DIR = `modules/${MODULE_ID}/templates/applications`;
 var emptyLink = {
@@ -1358,9 +1865,24 @@ var emptyLink = {
 };
 var inspectorClass;
 var open = /* @__PURE__ */ new Map();
+/**
+* Instance ids are unique per document only: a block copied to another page, or a duplicated page, keeps its id.
+* Windows are therefore keyed by editor and block.
+*/
+var editorKeys = /* @__PURE__ */ new WeakMap();
+var nextEditorKey = 0;
+function inspectorKey(view, instanceId) {
+	let key = editorKeys.get(view);
+	if (key === void 0) {
+		key = ++nextEditorKey;
+		editorKeys.set(view, key);
+	}
+	return `${key}-${instanceId}`;
+}
 /** Open the inspector for one block (spec §24), or bring its existing window forward. */
 async function openBlockInspector(runtime, view, instanceId) {
-	const existing = open.get(instanceId);
+	const key = inspectorKey(view, instanceId);
+	const existing = open.get(key);
 	if (existing?.rendered) {
 		existing.bringToFront();
 		return;
@@ -1394,9 +1916,10 @@ async function openBlockInspector(runtime, view, instanceId) {
 		runtime,
 		view,
 		instanceId,
+		key,
 		...block
 	});
-	open.set(instanceId, app);
+	open.set(key, app);
 	await app.render({
 		force: true,
 		position: besideEditor(view)
@@ -1458,7 +1981,7 @@ function defineBlockInspector() {
 		#preset;
 		constructor(target) {
 			super({
-				id: `${MODULE_ID}-inspector-${target.instanceId}`,
+				id: `${MODULE_ID}-inspector-${target.key}`,
 				window: { title: game.i18n.format("LOREFRAME.Inspector.Title", { name: game.i18n.localize(target.definition.name) }) }
 			});
 			this.#target = target;
@@ -1474,7 +1997,7 @@ function defineBlockInspector() {
 					preset: this.#preset,
 					presets: this.#presets
 				}),
-				instanceId: this.#target.instanceId,
+				idPrefix: this.id,
 				canSaveTemplate: configurableFields(this.#target.definition).length > 0
 			};
 		}
@@ -1494,7 +2017,7 @@ function defineBlockInspector() {
 			}
 		}
 		async close(options) {
-			open.delete(this.#target.instanceId);
+			open.delete(this.#target.key);
 			return super.close(options);
 		}
 		/** Called by the form handler. Resolves false when the author cancelled, so the window stays open. */
@@ -1605,59 +2128,6 @@ function defineBlockInspector() {
 	return BlockInspector;
 }
 //#endregion
-//#region src/editor/node-attrs.ts
-function getHtmlAttribute(node, name) {
-	const preserved = node.attrs._preserve;
-	if (typeof preserved !== "object" || preserved === null) return void 0;
-	const value = preserved[name];
-	return typeof value === "string" ? value : void 0;
-}
-/** Whether the node is the root element of a Loreframe block. */
-function isLoreframeRoot(node) {
-	return getHtmlAttribute(node, DATA_ATTR.template) !== void 0;
-}
-/** Whether the node is a slot region inside a block, where other blocks may be nested. */
-function isLoreframeSlot(node) {
-	return getHtmlAttribute(node, DATA_ATTR.slot) !== void 0;
-}
-/** Node attrs with one HTML attribute replaced, for `tr.setNodeMarkup`. */
-function withHtmlAttribute(node, name, value) {
-	const preserved = node.attrs._preserve;
-	const base = typeof preserved === "object" && preserved !== null ? preserved : {};
-	return {
-		...node.attrs,
-		_preserve: {
-			...base,
-			[name]: value
-		}
-	};
-}
-/** Foundry's secret node (common/prosemirror/schema/secret-node.mjs). */
-function isFoundrySecret(node) {
-	return node.type.name === "secret";
-}
-/** A secret that exists only to hide one Loreframe block (see TemplateRenderer). It belongs to that block. */
-function isSecretWrapper(node) {
-	return isFoundrySecret(node) && node.childCount === 1 && node.firstChild !== null && isLoreframeRoot(node.firstChild);
-}
-/** Identifiers that must stay unique in a document: block instance ids and Foundry secret ids. */
-function identityOf(node) {
-	const instance = getHtmlAttribute(node, DATA_ATTR.instance);
-	if (instance) return {
-		key: `instance:${instance}`,
-		renamed: (freshId) => withHtmlAttribute(node, DATA_ATTR.instance, freshId)
-	};
-	const secretId = isFoundrySecret(node) ? node.attrs.id : void 0;
-	if (typeof secretId === "string" && secretId) return {
-		key: `secret:${secretId}`,
-		renamed: (freshId) => ({
-			...node.attrs,
-			id: `secret-${freshId}`
-		})
-	};
-	return null;
-}
-//#endregion
 //#region src/editor/block-integrity-plugin.ts
 var COPY_EVENTS = /* @__PURE__ */ new Set(["paste", "drop"]);
 /** Marker prosemirror-view reads to treat clipboard HTML as a closed slice ("openStart openEnd context"). */
@@ -1669,6 +2139,14 @@ var BLOCK_CONTAINERS = /* @__PURE__ */ new Set([
 	"HEADER",
 	"FOOTER",
 	"ARTICLE",
+	"NAV",
+	"TABLE",
+	"THEAD",
+	"TBODY",
+	"TFOOT",
+	"TR",
+	"TH",
+	"TD",
 	"UL",
 	"OL",
 	"LI",
@@ -1747,323 +2225,6 @@ function removeBlockWhitespace(parent) {
 	else if (child instanceof Element && BLOCK_CONTAINERS.has(child.tagName)) removeBlockWhitespace(child);
 }
 //#endregion
-//#region src/core/template-parser.ts
-var BLOCK_SELECTOR = `[${DATA_ATTR.template}]`;
-var FIELD_SELECTOR = `[${DATA_ATTR.field}]`;
-/** Template versions are positive integers (TemplateRegistry). */
-var VERSION_PATTERN = /^[1-9]\d*$/;
-/**
-* Find Loreframe blocks under `root` (inclusive) in document order. Identification relies only on
-* `data-loreframe-*` attributes, never on styling classes (spec §10). Nothing is modified.
-*/
-function parseBlocks(root, templates) {
-	const elements = [...root.querySelectorAll(BLOCK_SELECTOR)];
-	if (root instanceof Element && root.matches(BLOCK_SELECTOR)) elements.unshift(root);
-	return elements.map((element) => parseBlock(element, templates));
-}
-function parseBlock(element, templates) {
-	const templateId = element.getAttribute(DATA_ATTR.template) ?? "";
-	const rawVersion = element.getAttribute(DATA_ATTR.version);
-	const version = rawVersion !== null && VERSION_PATTERN.test(rawVersion) ? Number(rawVersion) : null;
-	return {
-		element,
-		templateId,
-		version,
-		instanceId: element.getAttribute(DATA_ATTR.instance),
-		preset: element.getAttribute(DATA_ATTR.preset),
-		status: statusOf(templateId, version, templates),
-		fields: ownFields(element)
-	};
-}
-function statusOf(templateId, version, templates) {
-	const definition = templates.get(templateId);
-	if (!definition) return "unknown";
-	if (version === null) return "invalid";
-	if (version < definition.version) return "outdated";
-	if (version > definition.version) return "newer";
-	return "current";
-}
-/** Field elements whose nearest enclosing block is `block`. First occurrence of a field name wins. */
-function ownFields(block) {
-	const fields = /* @__PURE__ */ new Map();
-	for (const field of block.querySelectorAll(FIELD_SELECTOR)) {
-		if (field.parentElement?.closest(BLOCK_SELECTOR) !== block) continue;
-		const name = field.getAttribute(DATA_ATTR.field) ?? "";
-		if (!fields.has(name)) fields.set(name, field);
-	}
-	return fields;
-}
-//#endregion
-//#region src/editor/block-document.ts
-function locationFor(root, rootPos, $root) {
-	const wrapped = $root.depth > 0 && isSecretWrapper($root.parent);
-	return {
-		templateId: getHtmlAttribute(root, DATA_ATTR.template) ?? "",
-		instanceId: getHtmlAttribute(root, DATA_ATTR.instance) ?? "",
-		root,
-		rootPos,
-		host: wrapped ? $root.parent : root,
-		hostPos: wrapped ? $root.before() : rootPos
-	};
-}
-/** The block with the given instance id, or null when it no longer exists. */
-function locateBlock(doc, instanceId) {
-	let found = null;
-	doc.descendants((node, pos) => {
-		if (found) return false;
-		if (isLoreframeRoot(node) && getHtmlAttribute(node, DATA_ATTR.instance) === instanceId) {
-			found = locationFor(node, pos, doc.resolve(pos));
-			return false;
-		}
-		return true;
-	});
-	return found;
-}
-/** The innermost block that contains `$pos` (slots do not stop the search: the toolbar targets the nearest block). */
-function blockAt($pos) {
-	for (let depth = $pos.depth; depth > 0; depth--) {
-		const node = $pos.node(depth);
-		if (isLoreframeRoot(node)) {
-			const rootPos = $pos.before(depth);
-			return locationFor(node, rootPos, $pos.doc.resolve(rootPos));
-		}
-	}
-	return null;
-}
-/**
-* How a block's stored version relates to its registered template (same rules as the template parser). Only
-* current blocks may be rebuilt: rendering a newer or invalid block with this template would destroy its markup.
-*/
-function blockVersionState(root, definition) {
-	const raw = getHtmlAttribute(root, DATA_ATTR.version);
-	if (raw === void 0 || !VERSION_PATTERN.test(raw)) return "invalid";
-	const version = Number(raw);
-	if (version === definition.version) return "current";
-	return version < definition.version ? "outdated" : "newer";
-}
-/**
-* Bring one outdated block (with its secret wrapper) to the current template version (spec §46). The migration runs
-* on a copy of the block's HTML; on any issue the document is left untouched.
-*/
-function migrateBlockTransaction(state, location, deps) {
-	const result = deps.migrations.migrateHtml(deps.serialize(location.host));
-	const issue = result.issues.find((entry) => entry.instanceId === location.instanceId);
-	if (issue) return {
-		ok: false,
-		issue: issue.kind
-	};
-	const migrated = result.changed ? deps.parse(result.html) : null;
-	if (!migrated || migrated.childCount !== 1 || !migrated.firstChild) return {
-		ok: false,
-		issue: "unchanged"
-	};
-	const { hostPos, host } = location;
-	return {
-		ok: true,
-		tr: state.tr.replaceWith(hostPos, hostPos + host.nodeSize, migrated.firstChild)
-	};
-}
-/** The first node inside `root` named `name` (field or slot), not looking into nested blocks. */
-function findRegion(root, name, attr) {
-	let found = null;
-	root.descendants((node) => {
-		if (found) return false;
-		if (isLoreframeRoot(node)) return false;
-		if (getHtmlAttribute(node, attr) === name) {
-			found = node;
-			return false;
-		}
-		return true;
-	});
-	return found;
-}
-function firstImage(node) {
-	let found = null;
-	node.descendants((child) => {
-		if (found) return false;
-		if (child.type.name === "image") found = child;
-		return !found;
-	});
-	return found;
-}
-function imageSource(image) {
-	const src = image?.attrs.src;
-	return typeof src === "string" && src !== PLACEHOLDER_IMAGE ? src : "";
-}
-function textAttr(node, name) {
-	const value = node?.attrs[name];
-	return typeof value === "string" ? value : "";
-}
-function readItems(region) {
-	const items = [];
-	region.forEach((figure) => {
-		if (figure.type.name !== "figure") return;
-		const image = firstImage(figure);
-		let caption = "";
-		figure.forEach((child) => {
-			if (child.type.name === "figcaption") caption = child.textContent;
-		});
-		items.push({
-			src: imageSource(image),
-			alt: textAttr(image, "alt"),
-			caption
-		});
-	});
-	return items;
-}
-function readLinks(region) {
-	const items = [];
-	region.forEach((item) => {
-		if (item.type.name !== "list_item") return;
-		const paragraphs = [];
-		item.forEach((child) => {
-			if (child.isTextblock) paragraphs.push(child.textContent);
-		});
-		const [link = "", ...notes] = paragraphs;
-		const parsed = parseLink(link);
-		if (!parsed.uuid && !parsed.label) return;
-		items.push({
-			...parsed,
-			note: notes.join(" ").trim()
-		});
-	});
-	return items;
-}
-/**
-* Property values of a block as stored in the document. Rich-text fields are not read: they are edited in the
-* Journal editor and preserved by `rebuildBlockTransaction`.
-*/
-function readBlockValues(root, definition) {
-	const values = {};
-	for (const field of definition.fields ?? []) switch (field.type) {
-		case "select":
-		case "boolean": {
-			const raw = getHtmlAttribute(root, `${DATA_ATTR.optionPrefix}${field.id}`);
-			if (raw === void 0) break;
-			values[field.id] = field.type === "boolean" ? raw === "true" : raw;
-			break;
-		}
-		case "image": {
-			const region = findRegion(root, field.id, DATA_ATTR.field);
-			if (region) values[field.id] = imageSource(firstImage(region));
-			break;
-		}
-		case "text":
-			if (field.imageAltFor) {
-				const region = findRegion(root, field.imageAltFor, DATA_ATTR.field);
-				if (region) values[field.id] = textAttr(firstImage(region), "alt");
-				break;
-			}
-			values[field.id] = findRegion(root, field.id, DATA_ATTR.field)?.textContent ?? "";
-			break;
-		case "items": {
-			const region = findRegion(root, field.id, DATA_ATTR.field);
-			if (region) values[field.id] = readItems(region);
-			break;
-		}
-		case "links": {
-			const region = findRegion(root, field.id, DATA_ATTR.field);
-			values[field.id] = region ? readLinks(region) : [];
-			break;
-		}
-	}
-	return values;
-}
-/** Structural equality that ignores identifiers generated while parsing (Foundry secret ids). */
-function sameContent(a, b) {
-	if (a.type !== b.type || a.childCount !== b.childCount || !sameMarks(a, b)) return false;
-	if (a.isText) return a.text === b.text;
-	const comparable = (node) => JSON.stringify(isFoundrySecret(node) ? {
-		...node.attrs,
-		id: null
-	} : node.attrs);
-	if (comparable(a) !== comparable(b)) return false;
-	for (let i = 0; i < a.childCount; i++) if (!sameContent(a.child(i), b.child(i))) return false;
-	return true;
-}
-function sameMarks(a, b) {
-	return a.marks.length === b.marks.length && a.marks.every((mark, i) => b.marks[i]?.eq(mark) === true);
-}
-/** Whether a region holds anything worth keeping: text, images or nested blocks. */
-function hasContent(region) {
-	if (region.textContent.trim()) return true;
-	let found = false;
-	region.descendants((node) => {
-		if (node.type.name === "image" || isLoreframeRoot(node)) found = true;
-		return !found;
-	});
-	return found;
-}
-/**
-* Rich-text fields and slots the author has changed: they hold content and differ from the same region of
-* `fresh` (the block rendered with default values). Used to confirm before a toggle removes them.
-*/
-function writtenRegions(root, fresh, definition) {
-	return [...(definition.fields ?? []).filter((f) => f.type === "richText").map((f) => [f.id, DATA_ATTR.field]), ...(definition.slots ?? []).map((slot) => [slot, DATA_ATTR.slot])].filter(([id, attr]) => {
-		const written = findRegion(root, id, attr);
-		if (!written || !hasContent(written)) return false;
-		const original = findRegion(fresh, id, attr);
-		return !original || !sameContent(written, original);
-	}).map(([id]) => id);
-}
-/**
-* `fresh` is the block rendered with new values. Every rich-text field and slot is replaced by the matching
-* region of `old`, so the author's writing and nested blocks survive property edits.
-*/
-function graftBlock(fresh, old, definition) {
-	const richFields = new Set((definition.fields ?? []).filter((f) => f.type === "richText").map((f) => f.id));
-	const slots = new Set(definition.slots ?? []);
-	const graft = (node) => {
-		const field = getHtmlAttribute(node, DATA_ATTR.field);
-		const slot = getHtmlAttribute(node, DATA_ATTR.slot);
-		const kept = field !== void 0 && richFields.has(field) && findRegion(old, field, DATA_ATTR.field) || slot !== void 0 && slots.has(slot) && findRegion(old, slot, DATA_ATTR.slot);
-		if (kept) return node.copy(kept.content);
-		let content = node.content;
-		node.forEach((child, _offset, index) => {
-			const next = graft(child);
-			if (next !== child) content = content.replaceChild(index, next);
-		});
-		return content === node.content ? node : node.copy(content);
-	};
-	return graft(fresh);
-}
-/** Replace a block with a freshly rendered version of itself (`freshHost` as parsed, wrapper included). */
-function rebuildBlockTransaction(state, location, freshHost, definition, pm) {
-	const freshWrapped = isSecretWrapper(freshHost);
-	const grafted = graftBlock((freshWrapped ? freshHost.firstChild : freshHost) ?? freshHost, location.root, definition);
-	let host = grafted;
-	if (location.host !== location.root) host = location.host.copy(location.host.content.replaceChild(0, grafted));
-	else if (freshWrapped) host = freshHost.copy(freshHost.content.replaceChild(0, grafted));
-	const tr = state.tr.replaceWith(location.hostPos, location.hostPos + location.host.nodeSize, host);
-	return tr.setSelection(pm.Selection.near(tr.doc.resolve(location.hostPos + 1)));
-}
-/** Insert a copy of the block right after it, with new instance and secret ids. */
-function duplicateBlockTransaction(state, location, newId) {
-	const start = location.hostPos + location.host.nodeSize;
-	const tr = state.tr.insert(start, location.host);
-	tr.doc.nodesBetween(start, start + location.host.nodeSize, (node, pos) => {
-		if (pos < start) return true;
-		const identity = identityOf(node);
-		if (identity) tr.setNodeMarkup(pos, void 0, identity.renamed(newId()));
-		return true;
-	});
-	return tr;
-}
-/** Remove the block (and its secret wrapper). The document never ends up empty. */
-function deleteBlockTransaction(state, location, pm) {
-	const from = location.hostPos;
-	const to = from + location.host.nodeSize;
-	const tr = state.tr;
-	const $from = state.doc.resolve(from);
-	const paragraph = state.schema.nodes.paragraph;
-	if ($from.parent.childCount === 1 && paragraph) {
-		tr.replaceWith(from, to, paragraph.create());
-		return tr.setSelection(pm.TextSelection.create(tr.doc, from + 1));
-	}
-	tr.delete(from, to);
-	return tr.setSelection(pm.Selection.near(tr.doc.resolve(Math.min(from, tr.doc.content.size)), -1));
-}
-//#endregion
 //#region src/editor/block-toolbar.ts
 var GAP = 4;
 /**
@@ -2105,7 +2266,8 @@ var BlockToolbarView = class {
 	#element;
 	#label;
 	#buttons = [];
-	#onScroll = () => this.#position();
+	#onScroll = () => this.#schedulePosition();
+	#frame = null;
 	#instanceId = null;
 	/** Roving tab stop (WAI-ARIA toolbar pattern): the one button reachable with Tab. */
 	#current = 0;
@@ -2157,7 +2319,20 @@ var BlockToolbarView = class {
 		if (edit) edit.hidden = name === null;
 		this.#element.hidden = false;
 		this.#setCurrent(this.#current);
-		this.#position();
+		this.#schedulePosition();
+	}
+	/** Measuring forces layout: do it at most once per frame, not on every keystroke's transaction. */
+	#schedulePosition() {
+		if (this.#frame !== null) return;
+		const win = this.#view.dom.ownerDocument.defaultView;
+		if (!win?.requestAnimationFrame) {
+			this.#position();
+			return;
+		}
+		this.#frame = win.requestAnimationFrame(() => {
+			this.#frame = null;
+			if (!this.#view.isDestroyed) this.#position();
+		});
 	}
 	/** Alt+F10 from the editor: move focus into the toolbar. False when there is no toolbar to focus. */
 	focus() {
@@ -2167,6 +2342,7 @@ var BlockToolbarView = class {
 		return true;
 	}
 	destroy() {
+		if (this.#frame !== null) this.#view.dom.ownerDocument.defaultView?.cancelAnimationFrame(this.#frame);
 		this.#view.dom.removeEventListener("scroll", this.#onScroll);
 		this.#element.remove();
 	}
@@ -2254,28 +2430,61 @@ function isChatEditor(plugins, chatInputKey) {
 //#region src/editor/document-drop.ts
 /**
 * Targeted drop handling (spec §35): claims only document drops a system adapter can turn into a block; everything
-* else stays with Foundry's content-link plugin. The work after the claim is asynchronous (dialog, document lookup).
+* else stays with Foundry's content-link plugin. The work after the claim is asynchronous (dialog, document lookup)
+* and Journal text pages are edited collaboratively, so the drop's positions are mapped through every later change.
 */
 function buildDocumentDropPlugin(deps) {
-	return new deps.Plugin({ props: { handleDrop(view, event, _slice, moved) {
-		if (moved) return false;
-		const data = deps.getDragData(event);
-		if (typeof data.type !== "string" || typeof data.uuid !== "string" || !data.uuid) return false;
-		if (!deps.claims(data.type)) return false;
-		const target = view.posAtCoords({
-			left: event.clientX,
-			top: event.clientY
-		});
-		if (!target) return false;
-		event.preventDefault();
-		event.stopPropagation();
-		deps.onDrop(view, {
-			type: data.type,
-			uuid: data.uuid,
-			pos: target.pos
-		});
-		return true;
-	} } });
+	const tracked = /* @__PURE__ */ new Set();
+	const track = (from, to) => {
+		const range = {
+			from,
+			to,
+			deleted: false,
+			release: () => tracked.delete(range)
+		};
+		tracked.add(range);
+		return range;
+	};
+	const map = (tr) => {
+		for (const range of tracked) {
+			const start = tr.mapping.mapResult(range.from, 1);
+			const end = tr.mapping.mapResult(range.to, -1);
+			range.deleted ||= start.deleted && end.deleted && range.from !== range.to;
+			range.from = start.pos;
+			range.to = Math.max(start.pos, end.pos);
+		}
+	};
+	return new deps.Plugin({
+		state: {
+			init: () => null,
+			apply(tr, value) {
+				if (tr.docChanged && tracked.size) map(tr);
+				return value;
+			}
+		},
+		props: { handleDrop(view, event, _slice, moved) {
+			if (moved) return false;
+			const data = deps.getDragData(event);
+			if (typeof data.type !== "string" || typeof data.uuid !== "string" || !data.uuid) return false;
+			if (!deps.claims(data.type)) return false;
+			const target = view.posAtCoords({
+				left: event.clientX,
+				top: event.clientY
+			});
+			if (!target) return false;
+			event.preventDefault();
+			event.stopPropagation();
+			const { selection, doc } = view.state;
+			deps.onDrop(view, {
+				type: data.type,
+				uuid: data.uuid,
+				at: track(target.pos, target.pos),
+				selection: selection.empty ? null : track(selection.from, selection.to),
+				label: selection.empty ? "" : doc.textBetween(selection.from, selection.to, " ")
+			});
+			return true;
+		} }
+	});
 }
 /**
 * Add a plugin in front of the others. Foundry adds its content-link drop plugin before `createProseMirrorEditor`
@@ -2362,14 +2571,30 @@ var BLOCK_TAGS = /* @__PURE__ */ new Set([
 	"SECTION",
 	"PRE"
 ]);
-/**
-* Plain text from system HTML (e.g. a biography): one paragraph per leaf block, markup dropped. Parsed in an inert
-* `<template>`, so nothing in the source runs or loads.
-*/
-function htmlToText(html) {
-	if (!html) return "";
+/** Foundry secret blocks (GM-only content, spec §22). */
+var SECRET_SELECTOR = "section.secret";
+function parseInert(html) {
 	const template = document.createElement("template");
 	template.innerHTML = html;
+	return template.content;
+}
+/**
+* Plain text from system HTML (e.g. a biography): one paragraph per leaf block, markup dropped. Parsed in an inert
+* `<template>`, so nothing in the source runs or loads. Foundry secrets are left out unless `keepSecrets` is set,
+* which only callers writing into a GM-only destination may do.
+*/
+function htmlToText(html, { keepSecrets = false } = {}) {
+	if (!html) return "";
+	const root = parseInert(html);
+	if (!keepSecrets) root.querySelectorAll(SECRET_SELECTOR).forEach((secret) => secret.remove());
+	return fragmentText(root);
+}
+/** The text of the Foundry secrets in system HTML, for GM-only destinations. */
+function secretText(html) {
+	if (!html) return "";
+	return [...parseInert(html).querySelectorAll(SECRET_SELECTOR)].filter((secret) => !secret.parentElement?.closest(SECRET_SELECTOR)).map((secret) => fragmentText(secret)).filter(Boolean).join("\n\n");
+}
+function fragmentText(root) {
 	const paragraphs = [];
 	let inline = "";
 	const flush = () => {
@@ -2393,7 +2618,7 @@ function htmlToText(html) {
 		node.childNodes.forEach(walk);
 		if (isBlock) flush();
 	};
-	template.content.childNodes.forEach(walk);
+	root.childNodes.forEach(walk);
 	flush();
 	return paragraphs.join("\n\n");
 }
@@ -2490,8 +2715,11 @@ function toNpcData(actor, deps) {
 	const cr = typeof details.cr === "number" ? details.cr : null;
 	const challenge = !isCharacter && cr !== null ? deps.format("LOREFRAME.Integration.Dnd5e.Challenge", { cr: deps.formatCR(cr) }) : "";
 	const image = str(actor.img);
-	const publicText = htmlToText(str(biography.public));
-	const privateText = htmlToText(str(biography.value));
+	const publicBio = str(biography.public);
+	const privateBio = str(biography.value);
+	const publicText = htmlToText(publicBio);
+	const privateText = htmlToText(privateBio);
+	const gmText = [isCharacter ? secretText(privateBio) : htmlToText(privateBio, { keepSecrets: true }), secretText(publicBio)].filter(Boolean).join("\n\n");
 	return {
 		uuid: str(actor.uuid),
 		name: str(actor.name),
@@ -2505,7 +2733,7 @@ function toNpcData(actor, deps) {
 		motivation: str(details.ideal),
 		relationships: str(details.bond),
 		fears: str(details.flaw),
-		secrets: isCharacter ? "" : privateText
+		secrets: gmText
 	};
 }
 function classSummary(actor) {
@@ -2549,6 +2777,14 @@ var lastChoice = "link";
 * filled from the system adapter. The block is an independent copy; later Actor changes do not rewrite it.
 */
 async function handleDocumentDrop(runtime, view, drop) {
+	try {
+		await dropDocument(runtime, view, drop);
+	} finally {
+		drop.at.release();
+		drop.selection?.release();
+	}
+}
+async function dropDocument(runtime, view, drop) {
 	let document = null;
 	try {
 		document = await foundry.utils.fromUuid(drop.uuid);
@@ -2570,18 +2806,32 @@ async function handleDocumentDrop(runtime, view, drop) {
 	});
 	runtime.insert(view, choice, {
 		values,
-		at: drop.pos
+		at: drop.at.from
 	});
 }
+/**
+* The same link Foundry's own content-link plugin would insert (common/prosemirror/content-link-plugin.mjs): relative
+* to the page in editors marked `relative`, labelled by and replacing a non-empty selection.
+*/
 async function insertLink(view, drop) {
 	const { TextEditor } = foundry.applications.ux;
+	const host = view.dom.closest("prose-mirror");
+	const pageUuid = host?.hasAttribute("relative") ? host.dataset.documentUuid ?? host.dataset.documentUUID : void 0;
+	const relativeTo = pageUuid ? await foundry.utils.fromUuid(pageUuid) : null;
+	const useSelection = drop.selection !== null && !drop.selection.deleted;
 	const link = await TextEditor.implementation.getContentLink({
 		type: drop.type,
 		uuid: drop.uuid
+	}, {
+		...relativeTo ? { relativeTo } : {},
+		...useSelection && drop.label ? { label: drop.label } : {}
 	});
 	if (!link || view.isDestroyed || !view.editable) return;
-	const pos = Math.min(drop.pos, view.state.doc.content.size);
-	view.dispatch(view.state.tr.insertText(link, pos));
+	const { tr, schema } = view.state;
+	const size = tr.doc.content.size;
+	if (useSelection && drop.selection) tr.replaceWith(Math.min(drop.selection.from, size), Math.min(drop.selection.to, size), schema.text(link));
+	else tr.insertText(link, Math.min(drop.at.from, size));
+	view.dispatch(tr);
 	view.focus();
 }
 async function chooseInsertion(name) {
@@ -2645,12 +2895,22 @@ var TYPE_GROUPS = [
 */
 function buildLoreframeDropdown(deps) {
 	const available = deps.templates.list({ systemId: deps.systemId });
-	const byId = new Map(available.map((t) => [t.id, t]));
-	const pick = (ids) => ids.flatMap((id) => byId.get(id) ?? []).slice(0, 8);
-	const entry = (prefix, definition) => ({
-		action: `loreframe-${prefix}-${definition.id}`,
-		title: definition.name,
-		cmd: (_state, _dispatch, view) => deps.insert(view, definition.id)
+	const shortcuts = new Map([...available.map((t) => [t.id, {
+		id: t.id,
+		title: t.name
+	}]), ...(deps.userTemplates?.() ?? []).map((t) => [t.id, {
+		id: t.id,
+		title: escapeHtml(t.name)
+	}])]);
+	const pick = (ids) => ids.flatMap((id) => shortcuts.get(id) ?? []).slice(0, 8);
+	const asItem = (definition) => ({
+		id: definition.id,
+		title: definition.name
+	});
+	const entry = (prefix, item) => ({
+		action: `loreframe-${prefix}-${item.id}`,
+		title: item.title,
+		cmd: (_state, _dispatch, view) => deps.insert(view, item.id)
 	});
 	const group = (action, title, groupIndex, prefix, templates) => templates.length ? [{
 		action,
@@ -2665,7 +2925,7 @@ function buildLoreframeDropdown(deps) {
 		entries: [
 			...group("loreframe-group-favorites", "LOREFRAME.Editor.Favorites", 0, "favorite", pick(deps.favorites())),
 			...group("loreframe-group-recent", "LOREFRAME.Editor.Recent", 0, "recent", pick(deps.recent())),
-			...TYPE_GROUPS.flatMap(({ type, title }) => group(`loreframe-group-${type}`, title, 1, "insert", available.filter((t) => t.type === type))),
+			...TYPE_GROUPS.flatMap(({ type, title }) => group(`loreframe-group-${type}`, title, 1, "insert", available.filter((t) => t.type === type).map(asItem))),
 			{
 				action: "loreframe-open-library",
 				title: "LOREFRAME.Editor.OpenLibrary",
@@ -4922,6 +5182,13 @@ var Preferences = class {
 		const next = [templateId, ...recent.filter((id) => id !== templateId)].slice(0, 15);
 		await this.#storage.set("recent", next);
 	}
+	/** Drop an id that no longer exists (e.g. a deleted user template) from favorites and recent. */
+	async forget(templateId) {
+		for (const key of ["favorites", "recent"]) {
+			const list = this.#read(key);
+			if (list.includes(templateId)) await this.#storage.set(key, list.filter((id) => id !== templateId));
+		}
+	}
 	#read(key) {
 		const value = this.#storage.get(key);
 		return Array.isArray(value) ? value.filter((id) => typeof id === "string") : [];
@@ -5253,8 +5520,11 @@ function createRuntime() {
 				});
 				const fresh = ProseMirror.dom.parseString(html).firstChild;
 				if (!fresh) throw new Error("Rendered block is empty");
-				view.dispatch(rebuildBlockTransaction(view.state, location, fresh, definition, ProseMirror.state).scrollIntoView());
+				const tr = rebuildBlockTransaction(view.state, location, fresh, definition, ProseMirror.state);
+				view.dispatch(tr.scrollIntoView());
 				view.focus();
+				const moved = movedOutOfBlock(tr);
+				if (moved) ui.notifications.info("LOREFRAME.Inspector.MovedOut", { format: { count: String(moved) } });
 				return true;
 			} catch (error) {
 				logger.error(`Updating block "${instanceId}" failed`, error);
@@ -5396,14 +5666,15 @@ Hooks.once("init", () => {
 			systemId: game.system.id,
 			favorites: () => runtime.preferences.favorites(),
 			recent: () => runtime.preferences.recent(),
-			insert: (view, templateId) => runtime.insert(view, templateId),
+			userTemplates: () => runtime.libraryUserTemplates(),
+			insert: (view, id) => runtime.insertEntry(view, id),
 			openLibrary: (view) => openTemplateLibrary(runtime, view)
 		});
 	});
 	Hooks.on("createProseMirrorEditor", (_uuid, plugins) => {
 		if (isChatEditor(plugins, ProseMirror.plugins.chat.ChatInputPlugin.key)) return;
 		prependPlugin(plugins, "loreframeDocumentDrop", buildDocumentDropPlugin({
-			Plugin: ProseMirror.Plugin,
+			Plugin: ProseMirror.state.Plugin,
 			getDragData: (event) => foundry.applications.ux.TextEditor.implementation.getDragEventData(event),
 			claims: (type) => runtime.integrations.handles(type),
 			onDrop: (view, drop) => {
@@ -5414,15 +5685,15 @@ Hooks.once("init", () => {
 			}
 		}));
 		plugins.loreframeBlockIntegrity = buildBlockIntegrityPlugin({
-			Plugin: ProseMirror.Plugin,
+			Plugin: ProseMirror.state.Plugin,
 			newInstanceId
 		});
 		plugins.loreframeEditorTracker = buildEditorTrackerPlugin({
-			Plugin: ProseMirror.Plugin,
+			Plugin: ProseMirror.state.Plugin,
 			tracker: runtime.tracker
 		});
 		plugins.loreframeBlockToolbar = buildBlockToolbarPlugin({
-			Plugin: ProseMirror.Plugin,
+			Plugin: ProseMirror.state.Plugin,
 			localize: (key) => game.i18n.localize(key),
 			templateName: (id) => {
 				const definition = runtime.core.templates.get(id);
@@ -5432,7 +5703,9 @@ Hooks.once("init", () => {
 				openBlockInspector(runtime, view, instanceId).catch((error) => logger.error(`Could not open the inspector for "${instanceId}"`, error));
 			},
 			onDuplicate: (view, instanceId) => runtime.duplicateBlock(view, instanceId),
-			onDelete: (view, instanceId) => runtime.deleteBlock(view, instanceId)
+			onDelete: (view, instanceId) => {
+				deleteBlockWithConfirmation(runtime, view, instanceId).catch((error) => logger.error(`Could not delete block "${instanceId}"`, error));
+			}
 		});
 	});
 	Hooks.on("renderJournalEntryPageSheet", (app, element) => {
@@ -5453,3 +5726,4 @@ Hooks.once("ready", () => {
 });
 //#endregion
 
+//# sourceMappingURL=loreframe.js.map
