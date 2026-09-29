@@ -148,8 +148,8 @@ Blocks whose version differs from the registered template are never rebuilt:
 ```bash
 npm install
 npm run check    # typecheck, ESLint, Stylelint, Vitest, build
-npm run deploy   # copy dist/ into %LOCALAPPDATA%/FoundryVTT/Data/modules/loreframe (or FOUNDRY_DATA)
-npm run release  # check, then write ../loreframe-v<version>.zip (next to the project folder)
+npm run deploy   # copy dist/module/ into %LOCALAPPDATA%/FoundryVTT/Data/modules/loreframe (or FOUNDRY_DATA)
+npm run release  # check, then write dist/loreframe-v<version>.zip
 ```
 
 ### Publishing a release
