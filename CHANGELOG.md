@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0
+
+### Changed
+
+- The manifest caps compatibility at Foundry 14 until the next core generation is tested; the release check requires
+  `compatibility.maximum`.
+
+### Development
+
+- The build goes to `dist/module/`; `npm run release` writes `dist/loreframe-v<version>.zip` instead of the parent
+  folder and never replaces an existing archive.
+- Node.js 24 or newer, as in the other TacticalOtaku modules.
+
 ## 0.1.1
 
 ### Fixed
