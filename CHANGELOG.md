@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.1
+
+### Fixed
+
+- **My Templates are no longer lost while their base is missing.** A template of your own whose base template or style
+  was unavailable (a module that provides it disabled, an older Loreframe) was erased the next time any other template
+  of your own was saved, deleted or imported. Such templates are now kept and come back with their base.
+- Importing a template package rejects an oversized file before reading it.
+
+### Changed
+
+- Blocks made with an older version of their template are read-only, like newer ones, instead of offering an update
+  that could never succeed: no template has a second version yet, and the unused migration code is removed.
+
+### Development
+
+- One class allow-list is shared by the markup serializer and the block rebuild.
+- Smaller cleanups in the block document helpers and the core setup.
+
 ## 0.2.0
 
 ### Changed
