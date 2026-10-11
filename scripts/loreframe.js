@@ -40,6 +40,159 @@ var DATA_ATTR = {
 	/** Empty contents box that view mode fills from an article's headings. */
 	contents: "data-loreframe-contents"
 };
+var EXPORT_FORMAT = "loreframe-templates";
+var ID_PATTERN$3 = /^user-[a-z0-9][a-z0-9-]{0,47}$/;
+var NAME_MAX = 80;
+var DESCRIPTION_MAX = 200;
+/** Fields a user template may configure: sections and options, never content. */
+function configurableFields(definition) {
+	return (definition.fields ?? []).filter((field) => field.type === "select" || field.type === "boolean");
+}
+function plainText(value, max) {
+	if (typeof value !== "string") return null;
+	const text = value.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+	return text.length <= max ? text : null;
+}
+/** A validated copy of `raw`, or null. Unknown or invalid configuration keys are dropped. */
+function sanitizeUserTemplate(raw, deps) {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+	const data = raw;
+	if (data.schemaVersion !== 1) return null;
+	if (typeof data.id !== "string" || !ID_PATTERN$3.test(data.id)) return null;
+	const name = plainText(data.name, NAME_MAX);
+	if (!name) return null;
+	const description = data.description === void 0 ? "" : plainText(data.description, DESCRIPTION_MAX);
+	if (description === null) return null;
+	const base = typeof data.base === "string" ? deps.templates.get(data.base) : void 0;
+	if (!base) return null;
+	const preset = data.preset ?? null;
+	if (preset !== null && (typeof preset !== "string" || !base.presets?.includes(preset) || !deps.presets.has(preset))) return null;
+	if (typeof data.values !== "object" || data.values === null || Array.isArray(data.values)) return null;
+	const raws = data.values;
+	const values = {};
+	for (const field of configurableFields(base)) {
+		const value = raws[field.id];
+		if (field.type === "boolean" && typeof value === "boolean") values[field.id] = value;
+		if (field.type === "select" && typeof value === "string" && field.options?.includes(value)) values[field.id] = value;
+	}
+	return {
+		schemaVersion: 1,
+		id: data.id,
+		name,
+		description,
+		base: base.id,
+		preset,
+		values
+	};
+}
+/**
+* Reads hide stored templates that are not usable now, but writes keep them: their base template or preset may only be
+* missing for a while (a module disabled, an older Loreframe), and the author never asked to delete them.
+*/
+var UserTemplateStore = class {
+	#deps;
+	constructor(deps) {
+		this.#deps = deps;
+	}
+	/** Valid templates whose base is registered, in stored order. */
+	list() {
+		return this.#stored().flatMap((raw) => sanitizeUserTemplate(raw, this.#deps) ?? []);
+	}
+	get(id) {
+		return this.list().find((template) => template.id === id);
+	}
+	async create(input) {
+		const stored = this.#stored();
+		if (stored.length >= 100) throw new Error(`User template limit (100) reached`);
+		const template = this.#validate({
+			...input,
+			id: this.#newId()
+		});
+		await this.#deps.write([...stored, template]);
+		return template;
+	}
+	async update(id, patch) {
+		const current = this.get(id);
+		if (!current) throw new Error(`User template "${id}" not found`);
+		const next = this.#validate({
+			...current,
+			...patch,
+			id
+		});
+		await this.#deps.write(this.#stored().map((raw) => storedId(raw) === id ? next : raw));
+		return next;
+	}
+	async duplicate(id, name) {
+		const source = this.get(id);
+		if (!source) throw new Error(`User template "${id}" not found`);
+		return this.create({
+			...source,
+			name
+		});
+	}
+	async remove(id) {
+		if (!this.get(id)) return false;
+		const next = this.#stored().filter((raw) => storedId(raw) !== id);
+		await this.#deps.write(next);
+		return true;
+	}
+	/** A JSON package of the given templates (all by default). */
+	exportJson(ids) {
+		const templates = this.list().filter((template) => !ids || ids.includes(template.id));
+		return JSON.stringify({
+			format: EXPORT_FORMAT,
+			schemaVersion: 1,
+			templates
+		}, null, 2);
+	}
+	/** Add the valid templates of a package under new ids. Rejects malformed or oversized packages outright. */
+	async import(text) {
+		if (text.length > 256e3) throw new Error("Template package is too large");
+		const data = JSON.parse(text);
+		const pkg = typeof data === "object" && data !== null ? data : {};
+		if (pkg.format !== "loreframe-templates") throw new Error("Not a Loreframe template package");
+		if (pkg.schemaVersion !== 1) throw new Error("Unsupported template package version");
+		if (!Array.isArray(pkg.templates)) throw new Error("Template package has no template list");
+		const list = this.#stored();
+		let skipped = 0;
+		for (const raw of pkg.templates) {
+			const template = sanitizeUserTemplate(raw, this.#deps);
+			if (!template || list.length >= 100) {
+				skipped++;
+				continue;
+			}
+			list.push({
+				...template,
+				id: this.#newId()
+			});
+		}
+		const added = pkg.templates.length - skipped;
+		if (added) await this.#deps.write(list);
+		return {
+			added,
+			skipped
+		};
+	}
+	#stored() {
+		const stored = this.#deps.read();
+		return Array.isArray(stored) ? [...stored] : [];
+	}
+	#newId() {
+		return `user-${this.#deps.newId().toLowerCase()}`;
+	}
+	#validate(input) {
+		const template = sanitizeUserTemplate({
+			...input,
+			schemaVersion: 1,
+			description: input.description ?? ""
+		}, this.#deps);
+		if (!template) throw new Error(`Invalid user template "${input.name}"`);
+		return template;
+	}
+};
+function storedId(raw) {
+	return typeof raw === "object" && raw !== null ? raw.id : void 0;
+}
 //#endregion
 //#region src/utils/html.ts
 var ESCAPES = {
@@ -114,12 +267,12 @@ function isLinkItem(value) {
 }
 //#endregion
 //#region src/core/preset-registry.ts
-var ID_PATTERN$3 = /^[a-z0-9][a-z0-9-]*$/;
+var ID_PATTERN$2 = /^[a-z0-9][a-z0-9-]*$/;
 /** Visual presets (spec §8). A structure can render with any preset it lists. */
 var PresetRegistry = class {
 	#presets = /* @__PURE__ */ new Map();
 	register(preset) {
-		if (typeof preset.id !== "string" || !ID_PATTERN$3.test(preset.id)) throw new Error(`Invalid preset id "${String(preset.id)}"`);
+		if (typeof preset.id !== "string" || !ID_PATTERN$2.test(preset.id)) throw new Error(`Invalid preset id "${String(preset.id)}"`);
 		if (typeof preset.name !== "string" || !preset.name) throw new Error(`Preset "${preset.id}" needs a name`);
 		if (this.#presets.has(preset.id)) throw new Error(`Preset "${preset.id}" is already registered`);
 		this.#presets.set(preset.id, Object.freeze({
@@ -173,153 +326,6 @@ function isGalleryItem(value) {
 	const item = value;
 	return typeof item.src === "string" && typeof item.alt === "string" && typeof item.caption === "string";
 }
-var EXPORT_FORMAT = "loreframe-templates";
-var MAX_IMPORT_BYTES = 256e3;
-var ID_PATTERN$2 = /^user-[a-z0-9][a-z0-9-]{0,47}$/;
-var NAME_MAX = 80;
-var DESCRIPTION_MAX = 200;
-/** Fields a user template may configure: sections and options, never content. */
-function configurableFields(definition) {
-	return (definition.fields ?? []).filter((field) => field.type === "select" || field.type === "boolean");
-}
-function plainText(value, max) {
-	if (typeof value !== "string") return null;
-	const text = value.replace(/[\u0000-\u001f\u007f]/g, "").trim();
-	return text.length <= max ? text : null;
-}
-/** A validated copy of `raw`, or null. Unknown or invalid configuration keys are dropped. */
-function sanitizeUserTemplate(raw, deps) {
-	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
-	const data = raw;
-	if (data.schemaVersion !== 1) return null;
-	if (typeof data.id !== "string" || !ID_PATTERN$2.test(data.id)) return null;
-	const name = plainText(data.name, NAME_MAX);
-	if (!name) return null;
-	const description = data.description === void 0 ? "" : plainText(data.description, DESCRIPTION_MAX);
-	if (description === null) return null;
-	const base = typeof data.base === "string" ? deps.templates.get(data.base) : void 0;
-	if (!base) return null;
-	const preset = data.preset ?? null;
-	if (preset !== null && (typeof preset !== "string" || !base.presets?.includes(preset) || !deps.presets.has(preset))) return null;
-	if (typeof data.values !== "object" || data.values === null || Array.isArray(data.values)) return null;
-	const raws = data.values;
-	const values = {};
-	for (const field of configurableFields(base)) {
-		const value = raws[field.id];
-		if (field.type === "boolean" && typeof value === "boolean") values[field.id] = value;
-		if (field.type === "select" && typeof value === "string" && field.options?.includes(value)) values[field.id] = value;
-	}
-	return {
-		schemaVersion: 1,
-		id: data.id,
-		name,
-		description,
-		base: base.id,
-		preset,
-		values
-	};
-}
-var UserTemplateStore = class {
-	#deps;
-	constructor(deps) {
-		this.#deps = deps;
-	}
-	/** Valid templates whose base is registered, in stored order. */
-	list() {
-		const stored = this.#deps.read();
-		if (!Array.isArray(stored)) return [];
-		return stored.flatMap((raw) => sanitizeUserTemplate(raw, this.#deps) ?? []);
-	}
-	get(id) {
-		return this.list().find((template) => template.id === id);
-	}
-	async create(input) {
-		const list = this.list();
-		if (list.length >= 100) throw new Error(`User template limit (100) reached`);
-		const template = this.#validate({
-			...input,
-			id: this.#newId()
-		});
-		await this.#deps.write([...list, template]);
-		return template;
-	}
-	async update(id, patch) {
-		const list = this.list();
-		const current = list.find((template) => template.id === id);
-		if (!current) throw new Error(`User template "${id}" not found`);
-		const next = this.#validate({
-			...current,
-			...patch,
-			id
-		});
-		await this.#deps.write(list.map((template) => template.id === id ? next : template));
-		return next;
-	}
-	async duplicate(id, name) {
-		const source = this.get(id);
-		if (!source) throw new Error(`User template "${id}" not found`);
-		return this.create({
-			...source,
-			name
-		});
-	}
-	async remove(id) {
-		const list = this.list();
-		const next = list.filter((template) => template.id !== id);
-		if (next.length === list.length) return false;
-		await this.#deps.write(next);
-		return true;
-	}
-	/** A JSON package of the given templates (all by default). */
-	exportJson(ids) {
-		const templates = this.list().filter((template) => !ids || ids.includes(template.id));
-		return JSON.stringify({
-			format: EXPORT_FORMAT,
-			schemaVersion: 1,
-			templates
-		}, null, 2);
-	}
-	/** Add the valid templates of a package under new ids. Rejects malformed or oversized packages outright. */
-	async import(text) {
-		if (text.length > MAX_IMPORT_BYTES) throw new Error("Template package is too large");
-		const data = JSON.parse(text);
-		const pkg = typeof data === "object" && data !== null ? data : {};
-		if (pkg.format !== "loreframe-templates") throw new Error("Not a Loreframe template package");
-		if (pkg.schemaVersion !== 1) throw new Error("Unsupported template package version");
-		if (!Array.isArray(pkg.templates)) throw new Error("Template package has no template list");
-		const list = this.list();
-		let skipped = 0;
-		for (const raw of pkg.templates) {
-			const template = sanitizeUserTemplate(raw, this.#deps);
-			if (!template || list.length >= 100) {
-				skipped++;
-				continue;
-			}
-			list.push({
-				...template,
-				id: this.#newId()
-			});
-		}
-		const added = pkg.templates.length - skipped;
-		if (added) await this.#deps.write(list);
-		return {
-			added,
-			skipped
-		};
-	}
-	#newId() {
-		return `user-${this.#deps.newId().toLowerCase()}`;
-	}
-	#validate(input) {
-		const template = sanitizeUserTemplate({
-			...input,
-			schemaVersion: 1,
-			description: input.description ?? ""
-		}, this.#deps);
-		if (!template) throw new Error(`Invalid user template "${input.name}"`);
-		return template;
-	}
-};
 //#endregion
 //#region src/content-templates/shared.ts
 /** Neutral image shipped with the module, used until the author picks a real image. */
@@ -1272,6 +1278,7 @@ function defineTemplateLibrary() {
 		}
 		async #import(file) {
 			try {
+				if (file.size > 256e3) throw new Error("Template package is too large");
 				const text = await foundry.utils.readTextFromFile(file);
 				const result = await this.#runtime.userTemplates.import(text);
 				this.#runtime.notifyUserTemplatesChanged();
@@ -1367,6 +1374,120 @@ function registerSettings() {
 }
 function getSetting(key) {
 	return game.settings.get(MODULE_ID, key);
+}
+//#endregion
+//#region src/core/element-tree.ts
+var LoreframeMarkupError = class extends Error {
+	name = "LoreframeMarkupError";
+};
+/** Tags that only hold block children — Foundry's schema gives them `block*` content (spec §12). */
+var CONTAINER_TAGS = /* @__PURE__ */ new Set([
+	"aside",
+	"div",
+	"section",
+	"header",
+	"footer",
+	"article",
+	"nav",
+	"blockquote",
+	"ul",
+	"ol",
+	"li",
+	"table",
+	"thead",
+	"tbody",
+	"tr",
+	"th",
+	"td"
+]);
+/** Tags whose children are inline text. */
+var TEXT_TAGS = /* @__PURE__ */ new Set([
+	"h1",
+	"h2",
+	"h3",
+	"h4",
+	"h5",
+	"h6",
+	"p",
+	"figcaption"
+]);
+var VOID_TAGS = /* @__PURE__ */ new Set(["hr", "img"]);
+/** `figure` is special in the schema: `image? figcaption? block*`. */
+var OTHER_TAGS = /* @__PURE__ */ new Set(["figure"]);
+var EXACT_ATTRS = /* @__PURE__ */ new Set([
+	"data-no-toc",
+	"alt",
+	"src",
+	"role"
+]);
+var URL_ATTRS = /* @__PURE__ */ new Set(["src"]);
+/** The only classes renderers may emit; rebuilds also use it to tell template markup from the author's writing. */
+var CLASS_PATTERN = /^loreframe[a-z0-9_-]*$/;
+var FIELD_PATTERN = /^[a-z][a-z0-9-]*$/;
+var ATTR_NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
+/**
+* Serialize an element tree into HTML. This is the only path from renderer output to markup, so it enforces
+* the Loreframe allow-list and escapes every value.
+*/
+function serializeTree(tree) {
+	return serializeElement(tree);
+}
+function serializeElement(node) {
+	if (node.secret) return serializeSecret(node);
+	const tag = node.tag;
+	const isVoid = VOID_TAGS.has(tag);
+	if (!isVoid && !CONTAINER_TAGS.has(tag) && !TEXT_TAGS.has(tag) && !OTHER_TAGS.has(tag)) throw new LoreframeMarkupError(`Disallowed tag <${tag}>`);
+	const attrs = [];
+	if (node.classes?.length) {
+		for (const cls of node.classes) if (!CLASS_PATTERN.test(cls)) throw new LoreframeMarkupError(`Disallowed class "${cls}"`);
+		attrs.push(`class="${node.classes.join(" ")}"`);
+	}
+	if (node.field !== void 0) {
+		if (!FIELD_PATTERN.test(node.field)) throw new LoreframeMarkupError(`Invalid field name "${node.field}"`);
+		attrs.push(`${DATA_ATTR.field}="${node.field}"`);
+	}
+	if (node.slot !== void 0) {
+		if (!FIELD_PATTERN.test(node.slot)) throw new LoreframeMarkupError(`Invalid slot name "${node.slot}"`);
+		if (!CONTAINER_TAGS.has(node.tag)) throw new LoreframeMarkupError(`Slot <${node.tag}> must be a block container`);
+		attrs.push(`${DATA_ATTR.slot}="${node.slot}"`);
+	}
+	for (const [name, value] of Object.entries(node.attrs ?? {})) {
+		assertAllowedAttribute(name, value);
+		attrs.push(`${name}="${escapeHtml(value)}"`);
+	}
+	const open = attrs.length ? `<${tag} ${attrs.join(" ")}>` : `<${tag}>`;
+	const children = node.children ?? [];
+	if (isVoid) {
+		if (children.length) throw new LoreframeMarkupError(`Void element <${tag}> cannot have children`);
+		return open;
+	}
+	return `${open}${children.map((child) => serializeChild(tag, child)).join("")}</${tag}>`;
+}
+/**
+* Foundry's reveal toggle (client/applications/elements/secret-block.mjs) rewrites the secret's opening tag with a
+* regex, so the tag carries nothing but its class. ProseMirror assigns the id while parsing.
+*/
+function serializeSecret(node) {
+	if (node.tag !== "section") throw new LoreframeMarkupError(`A secret must be a <section>, not <${node.tag}>`);
+	if (node.classes?.length || node.field !== void 0 || node.slot !== void 0 || Object.keys(node.attrs ?? {}).length) throw new LoreframeMarkupError("A secret section must be bare");
+	return `<section class="secret">${(node.children ?? []).map((child) => serializeChild("section", child)).join("")}</section>`;
+}
+function serializeChild(parentTag, child) {
+	if (typeof child !== "string") return serializeElement(child);
+	if (!TEXT_TAGS.has(parentTag)) throw new LoreframeMarkupError(`Bare text is not allowed directly inside <${parentTag}>`);
+	return escapeHtml(child);
+}
+function assertAllowedAttribute(name, value) {
+	if (!(ATTR_NAME_PATTERN.test(name) && (EXACT_ATTRS.has(name) || name.startsWith("data-loreframe-") || name.startsWith("aria-")))) throw new LoreframeMarkupError(`Disallowed attribute "${name}"`);
+	if (URL_ATTRS.has(name) && !isSafeUrl(value)) throw new LoreframeMarkupError(`Disallowed URL in ${name}: "${value}"`);
+}
+/** http(s) or a relative path inside the Foundry data tree. No scheme-relative or other schemes. */
+function isSafeUrl(value) {
+	const trimmed = value.trim();
+	if (trimmed.startsWith("//")) return false;
+	const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(trimmed)?.[1]?.toLowerCase();
+	if (scheme === void 0) return ![...trimmed].some((char) => char.charCodeAt(0) < 32);
+	return scheme === "http" || scheme === "https";
 }
 //#endregion
 //#region src/core/template-parser.ts
@@ -1521,42 +1642,6 @@ function blockVersionState(root, definition) {
 	if (version === definition.version) return "current";
 	return version < definition.version ? "outdated" : "newer";
 }
-/**
-* Bring one outdated block (with its secret wrapper) to the current template version (spec §46). The migration runs
-* on a copy of the block's HTML; on any issue the document is left untouched.
-*/
-function migrateBlockTransaction(state, location, deps) {
-	const result = deps.migrations.migrateHtml(deps.serialize(location.host));
-	const issue = result.issues.find((entry) => entry.instanceId === location.instanceId);
-	if (issue) return {
-		ok: false,
-		issue: issue.kind
-	};
-	const migrated = result.changed ? deps.parse(result.html) : null;
-	if (!migrated || migrated.childCount !== 1 || !migrated.firstChild) return {
-		ok: false,
-		issue: "unchanged"
-	};
-	const { hostPos, host } = location;
-	return {
-		ok: true,
-		tr: state.tr.replaceWith(hostPos, hostPos + host.nodeSize, migrated.firstChild)
-	};
-}
-/** The first node inside `root` named `name` (field or slot), not looking into nested blocks. */
-function findRegion(root, name, attr) {
-	let found = null;
-	root.descendants((node) => {
-		if (found) return false;
-		if (isLoreframeRoot(node)) return false;
-		if (getHtmlAttribute(node, attr) === name) {
-			found = node;
-			return false;
-		}
-		return true;
-	});
-	return found;
-}
 /** Every node inside `root` named `name` (field or slot), not looking into nested blocks or into the matches. */
 function findRegions(root, name, attr) {
 	const found = [];
@@ -1567,6 +1652,10 @@ function findRegions(root, name, attr) {
 		return false;
 	});
 	return found;
+}
+/** The first node inside `root` named `name` (field or slot), not looking into nested blocks. */
+function findRegion(root, name, attr) {
+	return findRegions(root, name, attr)[0] ?? null;
 }
 function firstImage(node) {
 	let found = null;
@@ -1768,7 +1857,6 @@ function movedOutOfBlock(tr) {
 	const value = tr.getMeta(MOVED_OUT);
 	return typeof value === "number" ? value : 0;
 }
-var TEMPLATE_CLASS = /^loreframe[a-z0-9_-]*$/;
 /**
 * Nodes inside a block root that belong to no field or slot and were not produced by the template: renderer output
 * outside fields always carries a `loreframe*` class (checked for every built-in template in the tests).
@@ -1780,7 +1868,7 @@ function writingOutsideFields(root) {
 		node.forEach((child) => {
 			if (child.isText || child.isInline) return;
 			if (getHtmlAttribute(child, DATA_ATTR.field) !== void 0 || getHtmlAttribute(child, DATA_ATTR.slot) !== void 0) return;
-			const templateNode = getHtmlClasses(child).some((cls) => TEMPLATE_CLASS.test(cls));
+			const templateNode = getHtmlClasses(child).some((cls) => CLASS_PATTERN.test(cls));
 			if (templateNode && !isLoreframeRoot(child)) visit(child);
 			else if (!templateNode && (child.textContent.trim() || hasContent(child))) found.push(child);
 			else if (isLoreframeRoot(child)) found.push(child);
@@ -1887,27 +1975,12 @@ async function openBlockInspector(runtime, view, instanceId) {
 		existing.bringToFront();
 		return;
 	}
-	let block = runtime.readBlock(view, instanceId);
+	const block = runtime.readBlock(view, instanceId);
 	if (!block) {
 		ui.notifications.warn("LOREFRAME.Error.BlockMissing", { localize: true });
 		return;
 	}
-	if (block.version === "outdated") {
-		if (await foundry.applications.api.DialogV2.confirm({
-			window: {
-				title: game.i18n.localize("LOREFRAME.Migration.Title"),
-				icon: "fa-solid fa-arrows-rotate"
-			},
-			content: `<p>${game.i18n.localize("LOREFRAME.Migration.Content")}</p>`,
-			modal: true,
-			yes: {
-				label: game.i18n.localize("LOREFRAME.Migration.Confirm"),
-				icon: "fa-solid fa-arrows-rotate"
-			}
-		}) !== true || !runtime.migrateBlock(view, instanceId)) return;
-		block = runtime.readBlock(view, instanceId);
-	}
-	if (!block || block.version !== "current") {
+	if (block.version !== "current") {
 		ui.notifications.warn("LOREFRAME.Error.BlockVersion", { localize: true });
 		return;
 	}
@@ -4711,99 +4784,6 @@ function registerBuiltIns(core) {
 	for (const definition of BUILT_IN_TEMPLATES) core.templates.register(definition);
 }
 //#endregion
-//#region src/core/migration-service.ts
-/**
-* Explicit, targeted migrations of Loreframe blocks (spec §46). A block is replaced only after its whole
-* chain succeeded on a copy; otherwise the original markup stays exactly as it was (spec §47).
-*/
-var MigrationService = class {
-	#templates;
-	#migrations = /* @__PURE__ */ new Map();
-	constructor(templates) {
-		this.#templates = templates;
-	}
-	register(migration) {
-		if (!Number.isInteger(migration.from) || migration.from < 1) throw new Error(`Migration for "${migration.templateId}" needs a positive integer "from"`);
-		const key = migrationKey(migration.templateId, migration.from);
-		if (this.#migrations.has(key)) throw new Error(`Migration ${key} is already registered`);
-		this.#migrations.set(key, migration);
-	}
-	migrateHtml(html) {
-		const container = document.createElement("template");
-		container.innerHTML = html;
-		const issues = [];
-		let changed = false;
-		for (const block of parseBlocks(container.content, this.#templates).reverse()) {
-			const base = {
-				templateId: block.templateId,
-				instanceId: block.instanceId,
-				from: block.version
-			};
-			if (block.status === "unknown") issues.push({
-				kind: "unknown-template",
-				...base
-			});
-			else if (block.status === "newer") issues.push({
-				kind: "newer-version",
-				...base
-			});
-			else if (block.status === "invalid") issues.push({
-				kind: "invalid-version",
-				...base
-			});
-			if (block.status !== "outdated" || block.version === null) continue;
-			const target = this.#templates.get(block.templateId)?.version ?? block.version;
-			const outcome = this.#migrateBlock(block.element, block.version, target);
-			if (outcome.issue) {
-				issues.push({
-					...base,
-					...outcome.issue
-				});
-				continue;
-			}
-			block.element.replaceWith(outcome.element);
-			changed = true;
-		}
-		return {
-			html: changed ? container.innerHTML : html,
-			changed,
-			issues: issues.reverse()
-		};
-	}
-	#migrateBlock(original, from, to) {
-		const templateId = original.getAttribute(DATA_ATTR.template) ?? "";
-		const steps = [];
-		for (let version = from; version < to; version++) {
-			const step = this.#migrations.get(migrationKey(templateId, version));
-			if (!step) return { issue: {
-				kind: "missing-migration",
-				from: version
-			} };
-			steps.push(step);
-		}
-		const copy = original.cloneNode(true);
-		let version = from;
-		try {
-			for (const step of steps) {
-				step.migrate(copy);
-				version++;
-				copy.setAttribute(DATA_ATTR.version, String(version));
-			}
-		} catch (error) {
-			logger.error(`Migration ${migrationKey(templateId, version)} failed; original block kept`, error);
-			return { issue: {
-				kind: "migration-failed",
-				from: version,
-				message: String(error)
-			} };
-		}
-		return { element: copy };
-	}
-};
-function migrationKey(templateId, from) {
-	return `${templateId}@${from}`;
-}
-//#endregion
 //#region src/core/renderer-registry.ts
 /**
 * Built-in renderers, addressed by id from template definitions. Not exposed through the public API:
@@ -4920,119 +4900,6 @@ function deepFreeze(value) {
 	return value;
 }
 //#endregion
-//#region src/core/element-tree.ts
-var LoreframeMarkupError = class extends Error {
-	name = "LoreframeMarkupError";
-};
-/** Tags that only hold block children — Foundry's schema gives them `block*` content (spec §12). */
-var CONTAINER_TAGS = /* @__PURE__ */ new Set([
-	"aside",
-	"div",
-	"section",
-	"header",
-	"footer",
-	"article",
-	"nav",
-	"blockquote",
-	"ul",
-	"ol",
-	"li",
-	"table",
-	"thead",
-	"tbody",
-	"tr",
-	"th",
-	"td"
-]);
-/** Tags whose children are inline text. */
-var TEXT_TAGS = /* @__PURE__ */ new Set([
-	"h1",
-	"h2",
-	"h3",
-	"h4",
-	"h5",
-	"h6",
-	"p",
-	"figcaption"
-]);
-var VOID_TAGS = /* @__PURE__ */ new Set(["hr", "img"]);
-/** `figure` is special in the schema: `image? figcaption? block*`. */
-var OTHER_TAGS = /* @__PURE__ */ new Set(["figure"]);
-var EXACT_ATTRS = /* @__PURE__ */ new Set([
-	"data-no-toc",
-	"alt",
-	"src",
-	"role"
-]);
-var URL_ATTRS = /* @__PURE__ */ new Set(["src"]);
-var CLASS_PATTERN = /^loreframe[a-z0-9_-]*$/;
-var FIELD_PATTERN = /^[a-z][a-z0-9-]*$/;
-var ATTR_NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
-/**
-* Serialize an element tree into HTML. This is the only path from renderer output to markup, so it enforces
-* the Loreframe allow-list and escapes every value.
-*/
-function serializeTree(tree) {
-	return serializeElement(tree);
-}
-function serializeElement(node) {
-	if (node.secret) return serializeSecret(node);
-	const tag = node.tag;
-	const isVoid = VOID_TAGS.has(tag);
-	if (!isVoid && !CONTAINER_TAGS.has(tag) && !TEXT_TAGS.has(tag) && !OTHER_TAGS.has(tag)) throw new LoreframeMarkupError(`Disallowed tag <${tag}>`);
-	const attrs = [];
-	if (node.classes?.length) {
-		for (const cls of node.classes) if (!CLASS_PATTERN.test(cls)) throw new LoreframeMarkupError(`Disallowed class "${cls}"`);
-		attrs.push(`class="${node.classes.join(" ")}"`);
-	}
-	if (node.field !== void 0) {
-		if (!FIELD_PATTERN.test(node.field)) throw new LoreframeMarkupError(`Invalid field name "${node.field}"`);
-		attrs.push(`${DATA_ATTR.field}="${node.field}"`);
-	}
-	if (node.slot !== void 0) {
-		if (!FIELD_PATTERN.test(node.slot)) throw new LoreframeMarkupError(`Invalid slot name "${node.slot}"`);
-		if (!CONTAINER_TAGS.has(node.tag)) throw new LoreframeMarkupError(`Slot <${node.tag}> must be a block container`);
-		attrs.push(`${DATA_ATTR.slot}="${node.slot}"`);
-	}
-	for (const [name, value] of Object.entries(node.attrs ?? {})) {
-		assertAllowedAttribute(name, value);
-		attrs.push(`${name}="${escapeHtml(value)}"`);
-	}
-	const open = attrs.length ? `<${tag} ${attrs.join(" ")}>` : `<${tag}>`;
-	const children = node.children ?? [];
-	if (isVoid) {
-		if (children.length) throw new LoreframeMarkupError(`Void element <${tag}> cannot have children`);
-		return open;
-	}
-	return `${open}${children.map((child) => serializeChild(tag, child)).join("")}</${tag}>`;
-}
-/**
-* Foundry's reveal toggle (client/applications/elements/secret-block.mjs) rewrites the secret's opening tag with a
-* regex, so the tag carries nothing but its class. ProseMirror assigns the id while parsing.
-*/
-function serializeSecret(node) {
-	if (node.tag !== "section") throw new LoreframeMarkupError(`A secret must be a <section>, not <${node.tag}>`);
-	if (node.classes?.length || node.field !== void 0 || node.slot !== void 0 || Object.keys(node.attrs ?? {}).length) throw new LoreframeMarkupError("A secret section must be bare");
-	return `<section class="secret">${(node.children ?? []).map((child) => serializeChild("section", child)).join("")}</section>`;
-}
-function serializeChild(parentTag, child) {
-	if (typeof child !== "string") return serializeElement(child);
-	if (!TEXT_TAGS.has(parentTag)) throw new LoreframeMarkupError(`Bare text is not allowed directly inside <${parentTag}>`);
-	return escapeHtml(child);
-}
-function assertAllowedAttribute(name, value) {
-	if (!(ATTR_NAME_PATTERN.test(name) && (EXACT_ATTRS.has(name) || name.startsWith("data-loreframe-") || name.startsWith("aria-")))) throw new LoreframeMarkupError(`Disallowed attribute "${name}"`);
-	if (URL_ATTRS.has(name) && !isSafeUrl(value)) throw new LoreframeMarkupError(`Disallowed URL in ${name}: "${value}"`);
-}
-/** http(s) or a relative path inside the Foundry data tree. No scheme-relative or other schemes. */
-function isSafeUrl(value) {
-	const trimmed = value.trim();
-	if (trimmed.startsWith("//")) return false;
-	const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(trimmed)?.[1]?.toLowerCase();
-	if (scheme === void 0) return ![...trimmed].some((char) => char.charCodeAt(0) < 32);
-	return scheme === "http" || scheme === "https";
-}
-//#endregion
 //#region src/core/template-renderer.ts
 var INSTANCE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 var EMBED_KEY_PATTERN = /^[a-z][a-z0-9-]*$/;
@@ -5142,14 +5009,13 @@ function createCore(options) {
 		presets,
 		renderers,
 		renderer,
-		migrations: new MigrationService(templates),
 		parse: (root) => parseBlocks(root, templates),
 		renderNew: (templateId, renderOptions = {}) => renderer.render(templateId, {
 			...renderOptions,
 			instanceId: options.newInstanceId()
 		})
 	};
-	if (options.builtIns !== false) registerBuiltIns(core);
+	registerBuiltIns(core);
 	return core;
 }
 /** Per-user template favorites and recent use (spec §16). */
@@ -5531,22 +5397,6 @@ function createRuntime() {
 				ui.notifications.error("LOREFRAME.Error.UpdateFailed", { localize: true });
 				return false;
 			}
-		},
-		migrateBlock: (view, instanceId) => {
-			const location = editableBlock(core, view, instanceId);
-			if (!location) return false;
-			const result = migrateBlockTransaction(view.state, location, {
-				migrations: core.migrations,
-				serialize: (node) => ProseMirror.dom.serializeString(view.state.schema.topNodeType.create(null, node)),
-				parse: (html) => ProseMirror.dom.parseString(html)
-			});
-			if (!result.ok) {
-				logger.warn(`Block "${instanceId}" was not migrated (${result.issue}); it is kept unchanged`);
-				ui.notifications.warn("LOREFRAME.Error.MigrationFailed", { localize: true });
-				return false;
-			}
-			view.dispatch(result.tr.scrollIntoView());
-			return true;
 		},
 		duplicateBlock: (view, instanceId) => {
 			const location = editableBlock(core, view, instanceId);

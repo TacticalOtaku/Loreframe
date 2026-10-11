@@ -138,10 +138,8 @@ Every block root carries `data-loreframe-template`, `data-loreframe-version` and
 optionally `data-loreframe-preset` and `data-loreframe-opt-<field>`. Semantics live in `data-loreframe-*`
 attributes; classes are for styling only.
 
-Blocks whose version differs from the registered template are never rebuilt:
-
-- **Outdated blocks** are migrated only when the author confirms.
-- **Newer, invalid or unknown blocks** are left untouched.
+Blocks whose version differs from the registered template, and blocks of unknown templates, are never rebuilt: they
+are left untouched.
 
 ## Development
 

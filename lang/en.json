@@ -61,8 +61,7 @@
       "PreferencesFailed": "Loreframe could not save your template preferences.",
       "BlockMissing": "That block is no longer on the page.",
       "UpdateFailed": "Loreframe could not update the block. See the console for details.",
-      "BlockVersion": "This block was made with another version of its template and cannot be edited here. It is kept unchanged.",
-      "MigrationFailed": "The block could not be updated to the current version. It is kept unchanged; see the console for details."
+      "BlockVersion": "This block was made with another version of its template and cannot be edited here. It is kept unchanged."
     },
     "Template": {
       "Heading": {
@@ -554,11 +553,6 @@
       "NameRequired": "Enter a name for the template.",
       "Missing": "This template is no longer available.",
       "NothingToExport": "There are no templates to export."
-    },
-    "Migration": {
-      "Title": "Update block?",
-      "Content": "This block was made with an older version of its template. Update it to the current version to edit it? Ctrl+Z undoes the update.",
-      "Confirm": "Update"
     }
   }
 }
