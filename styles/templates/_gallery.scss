@@ -1,0 +1,89 @@
+// Gallery (spec §18). Grid-based; modes only change tile shape and caption treatment.
+
+.loreframe-gallery {
+  container: loreframe-gallery / inline-size;
+
+  --lf-gallery-min: 9rem;
+  --lf-gallery-ratio: 1;
+}
+
+.loreframe-gallery--portrait {
+  --lf-gallery-min: 7.5rem;
+  --lf-gallery-ratio: 3 / 4;
+}
+
+.loreframe-gallery--landscape,
+.loreframe-gallery--feature {
+  --lf-gallery-min: 11rem;
+  --lf-gallery-ratio: 16 / 9;
+}
+
+.loreframe-gallery--captioned {
+  --lf-gallery-min: 11rem;
+  --lf-gallery-ratio: 4 / 3;
+}
+
+.loreframe-gallery__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--lf-gallery-min), 100%), 1fr));
+  grid-auto-flow: dense;
+  gap: var(--lf-space-2);
+}
+
+.loreframe-gallery__item.loreframe-gallery__item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  overflow: hidden;
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-image-placeholder);
+
+  img {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin: 0;
+    border: none;
+    aspect-ratio: var(--lf-gallery-ratio);
+    object-fit: cover;
+  }
+}
+
+// Captions overlay the image on a scrim, except in the Captioned mode where they sit below it.
+.loreframe-gallery__caption.loreframe-gallery__caption {
+  position: absolute;
+  inset: auto 0 0;
+  padding: var(--lf-space-4) var(--lf-space-2) var(--lf-space-1);
+  background: var(--lf-scrim);
+  color: var(--lf-on-image);
+  font-size: var(--lf-text-meta);
+  line-height: 1.3;
+
+  .loreframe-gallery--captioned & {
+    position: static;
+    padding: var(--lf-space-2);
+    background: var(--lf-surface);
+    color: var(--lf-text);
+    font-size: var(--lf-text-body);
+  }
+}
+
+// Feature + Grid: the first image takes a double tile once there is room for two columns.
+@container loreframe-gallery (width >= 24rem) {
+  .loreframe-gallery--feature .loreframe-gallery__item:first-child {
+    grid-column: span 2;
+    grid-row: span 2;
+
+    img {
+      height: 100%;
+    }
+  }
+}
+
+// Images still showing the placeholder are editable in the editor but never shown to readers.
+.loreframe-gallery__item:has(> img[src$="assets/placeholders/image.svg"]):not(
+    :is(.ProseMirror, .loreframe-library__canvas) *
+  ) {
+  display: none;
+}

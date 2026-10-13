@@ -1,0 +1,278 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  buildLibraryModel,
+  matchesQuery,
+  type LibraryModelInput,
+} from "../src/applications/template-library/library-model";
+import type { LoreframeTemplateDefinition } from "../src/types";
+
+function def(id: string, overrides: Partial<LoreframeTemplateDefinition> = {}): LoreframeTemplateDefinition {
+  return {
+    id,
+    version: 1,
+    name: `T.${id}`,
+    description: `D.${id}`,
+    category: "blocks",
+    type: "block",
+    renderer: "r",
+    ...overrides,
+  };
+}
+
+const templates = [
+  def("heading", { tags: ["title"], icon: "fa-solid fa-heading", thumbnail: "modules/x/heading.webp" }),
+  def("note", { aliases: ["aside"] }),
+  def("two-columns", { category: "layouts", type: "layout" }),
+  def("npc-5e", { category: "npc", system: "dnd5e" }),
+];
+
+const labels: Record<string, string> = {
+  "T.heading": "Heading",
+  "D.heading": "Section title",
+  "T.note": "Заметка",
+  "D.note": "Врезка",
+  "T.two-columns": "Two Columns",
+  "D.two-columns": "Side by side",
+  "T.npc-5e": "NPC",
+  "D.npc-5e": "Statblock",
+  "LOREFRAME.Library.Category.Blocks": "Blocks",
+  "LOREFRAME.Library.Category.Layouts": "Layouts",
+  "LOREFRAME.Library.Category.NPC": "Characters",
+};
+
+function input(overrides: Partial<LibraryModelInput> = {}): LibraryModelInput {
+  return {
+    templates,
+    favorites: [],
+    recent: [],
+    state: { category: "all", query: "", selectedId: null, preset: null },
+    presetsFor: (definition) =>
+      definition.id === "npc-5e"
+        ? [
+            { id: "editorial", name: "P.editorial" },
+            { id: "arcane", name: "P.arcane" },
+          ]
+        : [],
+    localize: (key) => labels[key] ?? key,
+    renderPreview: vi.fn((id: string) => `<aside>${id}</aside>`),
+    canInsert: true,
+    ...overrides,
+  };
+}
+
+describe("buildLibraryModel", () => {
+  it("lists fixed categories first, then non-empty template categories with counts", () => {
+    const model = buildLibraryModel(input({ favorites: ["note"], recent: ["heading", "gone"] }));
+    expect(model.categories.map((c) => [c.id, c.count, c.active])).toEqual([
+      ["all", 4, true],
+      ["favorites", 1, false],
+      ["recent", 1, false],
+      ["mine", 0, false],
+      ["blocks", 2, false],
+      ["layouts", 1, false],
+      ["npc", 1, false],
+    ]);
+    expect(model.categories.find((c) => c.id === "npc")?.label).toBe("LOREFRAME.Library.Category.NPC");
+  });
+
+  it("builds localized cards, favorites and a system badge only for system templates", () => {
+    const model = buildLibraryModel(input({ favorites: ["note"] }));
+    const note = model.cards.find((c) => c.id === "note");
+    expect(note).toMatchObject({ name: "Заметка", description: "Врезка", favorite: true, systemBadge: null });
+    expect(model.cards.find((c) => c.id === "npc-5e")?.systemBadge).toBe("dnd5e");
+    expect(note?.icon).toBe("fa-solid fa-shapes");
+    expect(model.cards[0]?.icon).toBe("fa-solid fa-heading");
+    expect(model.cards[0]?.thumbnail).toBe("modules/x/heading.webp");
+    expect(note?.thumbnail).toBeNull();
+  });
+
+  it("filters by category and orders recent by recency, dropping unknown ids", () => {
+    const layouts = buildLibraryModel(
+      input({ state: { category: "layouts", query: "", selectedId: null, preset: null } }),
+    );
+    expect(layouts.cards.map((c) => c.id)).toEqual(["two-columns"]);
+    const recent = buildLibraryModel(
+      input({
+        recent: ["note", "missing", "heading"],
+        state: { category: "recent", query: "", selectedId: null, preset: null },
+      }),
+    );
+    expect(recent.cards.map((c) => c.id)).toEqual(["note", "heading"]);
+  });
+
+  it("selects the first card by default and keeps a valid explicit selection", () => {
+    const first = buildLibraryModel(input());
+    expect(first.selected?.id).toBe("heading");
+    expect(first.cards.filter((c) => c.selected).map((c) => c.id)).toEqual(["heading"]);
+    const chosen = buildLibraryModel(
+      input({ state: { category: "all", query: "", selectedId: "note", preset: null } }),
+    );
+    expect(chosen.selected?.id).toBe("note");
+    const outside = buildLibraryModel(
+      input({ state: { category: "layouts", query: "", selectedId: "note", preset: null } }),
+    );
+    expect(outside.selected?.id).toBe("two-columns");
+  });
+
+  it("only selects cards that match the search query", () => {
+    const search = (query: string, selectedId: string | null) =>
+      buildLibraryModel(input({ state: { category: "all", query, selectedId, preset: null } }));
+    expect(search("side by", "heading").selected?.id).toBe("two-columns");
+    expect(search("side by", "two-columns").selected?.id).toBe("two-columns");
+    const none = search("nothing-matches", "heading");
+    expect(none.selected).toBeNull();
+    expect(none.cards).toHaveLength(4);
+    expect(none.cards.every((c) => !c.selected)).toBe(true);
+  });
+
+  it("renders a preview only for the selected template", () => {
+    const renderPreview = vi.fn((id: string) => `<aside>${id}</aside>`);
+    const model = buildLibraryModel(input({ renderPreview }));
+    expect(renderPreview).toHaveBeenCalledOnce();
+    expect(model.selected?.previewHtml).toBe("<aside>heading</aside>");
+    expect(model.cards[1]?.previewHtml).toBe("");
+  });
+
+  it("keeps the library usable when a preview fails to render", () => {
+    const model = buildLibraryModel(
+      input({
+        renderPreview: () => null,
+      }),
+    );
+    expect(model.selected?.previewHtml).toBe("");
+    expect(model.selected?.previewError).toBe(true);
+  });
+
+  it("reports empty states per category", () => {
+    const empty = (category: LibraryModelInput["state"]["category"]) =>
+      buildLibraryModel(input({ state: { category, query: "", selectedId: null, preset: null } })).empty;
+    expect(empty("favorites")).toBe("favorites");
+    expect(empty("recent")).toBe("recent");
+    expect(empty("wiki")).toBe("category");
+    expect(empty("all")).toBeNull();
+    expect(
+      buildLibraryModel(input({ state: { category: "wiki", query: "", selectedId: null, preset: null } }))
+        .selected,
+    ).toBeNull();
+  });
+
+  it("builds search text from name, description, tags, aliases and category", () => {
+    const heading = buildLibraryModel(input()).cards[0]!;
+    for (const query of ["head", "SECTION", "title", "blocks"]) {
+      expect(matchesQuery(heading.searchText, query)).toBe(true);
+    }
+    const note = buildLibraryModel(input()).cards[1]!;
+    expect(matchesQuery(note.searchText, "aside")).toBe(true);
+    expect(matchesQuery(note.searchText, "заме")).toBe(true);
+  });
+});
+
+describe("matchesQuery", () => {
+  it("requires every term and ignores case, spacing and diacritics", () => {
+    expect(matchesQuery("npc dossier character", "  Dossier   NPC ")).toBe(true);
+    expect(matchesQuery("npc dossier", "npc gallery")).toBe(false);
+    expect(matchesQuery("cafe", "Café")).toBe(true);
+    expect(matchesQuery("ёлка", "елка")).toBe(true);
+    expect(matchesQuery("anything", "")).toBe(true);
+  });
+});
+
+describe("library presets", () => {
+  it("offers a preset choice for templates with several presets and previews the chosen one", () => {
+    const renderPreview = vi.fn((id: string, preset?: string) => `<aside>${id}:${preset}</aside>`);
+    const model = buildLibraryModel(
+      input({ renderPreview, state: { category: "all", query: "", selectedId: "npc-5e", preset: "arcane" } }),
+    );
+    expect(model.presets).toEqual({
+      value: "arcane",
+      options: [
+        { value: "editorial", label: "P.editorial" },
+        { value: "arcane", label: "P.arcane" },
+      ],
+    });
+    expect(model.preset).toBe("arcane");
+    expect(renderPreview).toHaveBeenCalledWith("npc-5e", "arcane");
+  });
+
+  it("falls back to the first preset when the remembered one is not offered", () => {
+    const model = buildLibraryModel(
+      input({ state: { category: "all", query: "", selectedId: "npc-5e", preset: "gone" } }),
+    );
+    expect(model.preset).toBe("editorial");
+  });
+
+  it("offers no choice and no preset for templates without presets", () => {
+    const renderPreview = vi.fn((id: string) => id);
+    const model = buildLibraryModel(
+      input({ renderPreview, state: { category: "all", query: "", selectedId: "note", preset: "arcane" } }),
+    );
+    expect(model.presets).toBeNull();
+    expect(model.preset).toBeNull();
+    expect(renderPreview).toHaveBeenCalledWith("note", undefined);
+  });
+});
+
+describe("library user templates", () => {
+  const mine = [
+    { id: "user-merchant", name: "Merchant", description: "", base: templates[3]!, preset: "arcane" },
+    { id: "user-rumour", name: "Rumour", description: "Tavern talk", base: templates[1]!, preset: null },
+  ];
+
+  it("adds a My Templates category after Recent, listing user variants with their base", () => {
+    const model = buildLibraryModel(
+      input({ userTemplates: mine, state: { category: "mine", query: "", selectedId: null, preset: null } }),
+    );
+    expect(model.categories.slice(0, 4).map((c) => [c.id, c.count])).toEqual([
+      ["all", 6],
+      ["favorites", 0],
+      ["recent", 0],
+      ["mine", 2],
+    ]);
+    expect(model.cards.map((c) => [c.id, c.name, c.description, c.mine, c.baseName])).toEqual([
+      ["user-merchant", "Merchant", "NPC", true, "NPC"],
+      ["user-rumour", "Rumour", "Tavern talk", true, "Заметка"],
+    ]);
+    expect(model.cards[0]?.icon).toBe("fa-solid fa-shapes");
+  });
+
+  it("previews a user template with its own preset and offers no preset choice", () => {
+    const renderPreview = vi.fn((id: string, preset?: string) => `${id}:${preset}`);
+    const model = buildLibraryModel(
+      input({
+        userTemplates: mine,
+        renderPreview,
+        state: { category: "mine", query: "", selectedId: "user-merchant", preset: "editorial" },
+      }),
+    );
+    expect(model.selected).toMatchObject({ id: "user-merchant", mine: true });
+    expect(model.presets).toBeNull();
+    expect(model.preset).toBe("arcane");
+    expect(renderPreview).toHaveBeenCalledWith("user-merchant", "arcane");
+  });
+
+  it("finds user templates by their base, keeps them in favorites and shows an empty state", () => {
+    const search = buildLibraryModel(
+      input({
+        userTemplates: mine,
+        state: { category: "all", query: "врезка", selectedId: null, preset: null },
+      }),
+    );
+    expect(search.selected?.id).toBe("note");
+    expect(search.cards.filter((c) => matchesQuery(c.searchText, "врезка")).map((c) => c.id)).toEqual([
+      "note",
+      "user-rumour",
+    ]);
+    const favorites = buildLibraryModel(
+      input({
+        userTemplates: mine,
+        favorites: ["user-rumour"],
+        state: { category: "favorites", query: "", selectedId: null, preset: null },
+      }),
+    );
+    expect(favorites.cards.map((c) => c.id)).toEqual(["user-rumour"]);
+    const empty = buildLibraryModel(
+      input({ state: { category: "mine", query: "", selectedId: null, preset: null } }),
+    );
+    expect(empty.empty).toBe("mine");
+  });
+});

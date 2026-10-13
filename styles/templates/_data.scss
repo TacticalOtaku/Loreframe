@@ -1,0 +1,100 @@
+// Key/Value list, Tags, Stats Row. Tables reset Foundry's journal table look inside Loreframe blocks.
+@use "../foundations/mixins" as *;
+
+.loreframe-facts {
+  padding: var(--lf-space-3) var(--lf-space-4);
+  border: var(--lf-divider) solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+}
+
+.loreframe-facts__title.loreframe-facts__title {
+  margin: 0 0 var(--lf-space-2);
+  padding: 0;
+  border: none;
+  font-family: var(--lf-font-body);
+  font-size: var(--lf-text-meta);
+  font-weight: 700;
+  letter-spacing: var(--lf-tracking-meta);
+  text-transform: uppercase;
+  color: var(--lf-text-muted);
+}
+
+// In the editor prosemirror-tables renders tables through a node view (div.tableWrapper > table) without their
+// attributes, so each table rule also targets that wrapper inside its block.
+.loreframe-facts__table.loreframe-facts__table,
+.loreframe-facts .tableWrapper > table {
+  @include table-reset;
+
+  font-size: var(--lf-text-body);
+
+  tr + tr {
+    border-block-start: var(--lf-divider) solid var(--lf-border);
+  }
+
+  th {
+    width: 38%;
+    padding-inline-start: 0;
+    color: var(--lf-text-muted);
+    font-weight: 600;
+    text-align: start;
+  }
+
+  td {
+    padding-inline-end: 0;
+  }
+}
+
+.loreframe-tags__list.loreframe-tags__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lf-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  > li {
+    margin: 0;
+    padding: 1px var(--lf-space-2);
+    border: var(--lf-divider) solid var(--lf-border-strong);
+    border-radius: var(--lf-radius-sm);
+    background: var(--lf-surface);
+    font-size: var(--lf-text-meta);
+    letter-spacing: 0.02em;
+
+    > p {
+      margin: 0;
+    }
+  }
+}
+
+.loreframe-stats__table.loreframe-stats__table,
+.loreframe-stats .tableWrapper > table {
+  @include table-reset;
+
+  table-layout: fixed;
+  border-block: var(--lf-divider) solid var(--lf-border-strong);
+  text-align: center;
+
+  th {
+    padding-block-start: var(--lf-space-2);
+    color: var(--lf-text-muted);
+    font-size: var(--lf-text-meta);
+    font-weight: 700;
+    letter-spacing: var(--lf-tracking-meta);
+    text-transform: uppercase;
+    overflow-wrap: anywhere;
+  }
+
+  td {
+    padding-block-end: var(--lf-space-2);
+    font-family: var(--lf-font-display);
+    font-size: var(--lf-text-heading);
+    font-variant-numeric: tabular-nums;
+  }
+
+  th + th,
+  td + td {
+    border-inline-start: var(--lf-divider) solid var(--lf-border);
+  }
+}

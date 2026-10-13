@@ -1,0 +1,19 @@
+// Loreframe stylesheet entry. Every rule is scoped to a `.loreframe*` class.
+@use "tokens/tokens";
+@use "foundations/base";
+@use "components/block-toolbar";
+@use "templates/block";
+@use "templates/callout";
+@use "templates/heading";
+@use "templates/divider";
+@use "templates/text-blocks";
+@use "templates/media";
+@use "templates/data";
+@use "templates/layouts";
+@use "templates/gallery";
+@use "templates/presets";
+@use "templates/npc";
+@use "templates/location";
+@use "templates/wiki";
+@use "applications/template-library";
+@use "applications/inspector";

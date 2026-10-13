@@ -1,0 +1,66 @@
+// Contextual block toolbar (spec §23). Positioned by script inside <prose-mirror>.
+
+prose-mirror:has(> .loreframe-block-toolbar) {
+  position: relative;
+}
+
+.loreframe-block-toolbar {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  border: var(--lf-divider) solid var(--lf-border-strong);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-background);
+  box-shadow: var(--lf-shadow-sm);
+  color: var(--lf-text);
+  font-size: var(--lf-text-meta);
+  white-space: nowrap;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.loreframe-block-toolbar__label {
+  max-inline-size: 12rem;
+  padding: 0 var(--lf-space-2);
+  overflow: hidden;
+  color: var(--lf-text-muted);
+  font-weight: 600;
+  letter-spacing: var(--lf-tracking-meta);
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+}
+
+.loreframe-block-toolbar__button {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--lf-radius-sm);
+  background: none;
+  box-shadow: none;
+  color: inherit;
+  font-size: var(--lf-text-meta);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--lf-surface-raised);
+    color: var(--lf-accent);
+  }
+
+  &--delete:hover {
+    color: var(--lf-danger);
+  }
+
+  // Focus ring: .loreframe :focus-visible (foundations/_base.scss).
+  &[hidden] {
+    display: none;
+  }
+}

@@ -1,0 +1,24 @@
+// Heading block: display-serif title with a quiet subtitle. Doubled classes outrank Foundry's journal h2 rules.
+
+.loreframe-heading {
+  margin-block: var(--lf-space-5) var(--lf-space-3);
+}
+
+.loreframe-heading__title.loreframe-heading__title {
+  margin: 0;
+  padding: 0 0 var(--lf-space-1);
+  border-block-end: var(--lf-divider) solid var(--lf-border-strong);
+  font-family: var(--lf-font-display);
+  font-size: var(--lf-text-display);
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--lf-text);
+}
+
+.loreframe-heading__subtitle.loreframe-heading__subtitle {
+  margin: var(--lf-space-1) 0 0;
+  font-size: var(--lf-text-body);
+  font-style: italic;
+  letter-spacing: 0.02em;
+  color: var(--lf-text-muted);
+}

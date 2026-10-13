@@ -1,0 +1,249 @@
+// Location page (spec §21): banner hero, overview with an info block beside the description, linked lists,
+// rumours, GM secrets and an embedded Gallery. Presets come from _presets.scss.
+
+.loreframe-location {
+  --lf-location-gap: var(--lf-space-4);
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--lf-location-gap);
+  font-size: var(--lf-text-body);
+}
+
+// Hero
+
+.loreframe-location__hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lf-space-3);
+}
+
+.loreframe-location__banner {
+  inline-size: 100%;
+  aspect-ratio: 21 / 8;
+  min-block-size: 7rem;
+  overflow: hidden;
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-image-placeholder);
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border: none;
+    object-fit: cover;
+  }
+
+  > p {
+    margin: 0;
+  }
+}
+
+.loreframe-location__name.loreframe-location__name {
+  margin: 0;
+  padding: 0;
+  border: none;
+  color: var(--lf-text);
+  font-family: var(--lf-preset-name-font);
+  font-size: var(--lf-text-display);
+  font-weight: 700;
+  line-height: 1.15;
+  text-transform: var(--lf-preset-name-case);
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
+.loreframe-location__meta {
+  display: flex;
+  flex-wrap: wrap;
+  margin-block-start: var(--lf-space-1);
+  color: var(--lf-text-muted);
+  font-size: var(--lf-text-meta);
+  font-weight: 600;
+  letter-spacing: var(--lf-tracking-meta);
+  text-transform: uppercase;
+
+  > p {
+    margin: 0;
+  }
+
+  > p + p::before {
+    content: "·";
+    margin-inline: 0.45em;
+    color: var(--lf-preset-accent);
+  }
+}
+
+.loreframe-location__summary {
+  font-size: calc(var(--lf-text-body) * 1.08);
+  line-height: var(--lf-leading);
+}
+
+// Shared pieces
+
+.loreframe-location__label.loreframe-location__label {
+  margin: 0 0 var(--lf-space-1);
+  padding: 0;
+  border: none;
+  color: var(--lf-preset-label);
+  font-family: var(--lf-font-body);
+  font-size: var(--lf-text-meta);
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: var(--lf-tracking-meta);
+  text-transform: uppercase;
+}
+
+.loreframe-location__summary,
+.loreframe-location__text,
+.loreframe-location__map {
+  > :first-child {
+    margin-block-start: 0;
+  }
+
+  > :last-child {
+    margin-block-end: 0;
+  }
+}
+
+.loreframe-location__section {
+  min-inline-size: 0;
+}
+
+// Overview: info block beside the description, wrapping below it when the page is narrow.
+
+.loreframe-location__overview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--lf-location-gap) var(--lf-space-5);
+
+  .loreframe-location--info-right & {
+    flex-direction: row-reverse;
+  }
+}
+
+.loreframe-location__main {
+  flex: 999 1 18rem;
+}
+
+.loreframe-location__info {
+  flex: 1 1 14rem;
+
+  // Capped beside the description; once the overview is too narrow for both (~34rem), it takes the full row.
+  max-inline-size: max(18rem, (34rem - 100%) * 999);
+  padding: var(--lf-space-3);
+  border-block-start: var(--lf-rule) solid var(--lf-preset-accent);
+  border-radius: 0 0 var(--lf-radius-sm) var(--lf-radius-sm);
+  background: var(--lf-surface);
+
+  .loreframe-location--info-full & {
+    flex-basis: 100%;
+    max-inline-size: none;
+  }
+
+  // Full width: rows flow side by side instead of stacking in a narrow column.
+  .loreframe-location--info-full & .loreframe-location__row {
+    display: inline-flex;
+    margin-inline-end: var(--lf-space-5);
+  }
+}
+
+.loreframe-location__row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 var(--lf-space-3);
+  padding-block: var(--lf-space-1);
+
+  & + & {
+    border-block-start: var(--lf-divider) solid var(--lf-border);
+  }
+
+  > p {
+    margin: 0;
+  }
+}
+
+.loreframe-location__key.loreframe-location__key {
+  color: var(--lf-text-muted);
+  font-size: var(--lf-text-meta);
+  font-weight: 600;
+  letter-spacing: var(--lf-tracking-meta);
+  text-transform: uppercase;
+}
+
+.loreframe-location__value.loreframe-location__value {
+  font-weight: 600;
+  text-align: end;
+}
+
+// Map
+
+.loreframe-location__map img {
+  display: block;
+  inline-size: 100%;
+  max-block-size: 36rem;
+  margin: 0 0 var(--lf-space-1);
+  border: var(--lf-divider) solid var(--lf-preset-frame);
+  border-radius: var(--lf-radius-sm);
+  object-fit: contain;
+}
+
+// Map still showing the placeholder: the whole section is hidden outside the editor.
+.loreframe-location__section--map:has(img[src$="assets/placeholders/image.svg"]):not(
+    :is(.ProseMirror, .loreframe-library__canvas) *
+  ) {
+  display: none;
+}
+
+// Linked lists
+
+.loreframe-location__lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+  gap: var(--lf-space-3) var(--lf-space-5);
+  padding-block-start: var(--lf-location-gap);
+  border-block-start: var(--lf-preset-rule);
+}
+
+.loreframe-links.loreframe-links {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.loreframe-links__item.loreframe-links__item {
+  margin: 0;
+  padding-block: var(--lf-space-1);
+
+  & + & {
+    border-block-start: var(--lf-divider) solid var(--lf-border);
+  }
+
+  > p {
+    margin: 0;
+  }
+}
+
+.loreframe-links__link {
+  font-weight: 600;
+}
+
+.loreframe-links__note.loreframe-links__note {
+  color: var(--lf-text-muted);
+  font-size: var(--lf-text-meta);
+}
+
+// Rumours, secrets and gallery follow the lists with the same rule above them.
+
+.loreframe-location__section--rumours,
+.loreframe-location__section--gallery {
+  padding-block-start: var(--lf-location-gap);
+  border-block-start: var(--lf-preset-rule);
+}
+
+.loreframe-location__gallery > .loreframe-block {
+  margin-block: 0;
+}

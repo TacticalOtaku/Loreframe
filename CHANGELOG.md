@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.2
+
+### Fixed
+
+- The block inspector stays open with your changes when a block cannot be updated (the editor was closed, the block
+  was deleted or the update failed) instead of closing and dropping them.
+- The template import limit counts characters, so a package written in Cyrillic or another non-Latin script is not
+  rejected early for its byte size.
+
 ## 0.2.1
 
 ### Fixed

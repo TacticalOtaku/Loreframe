@@ -1,0 +1,18 @@
+// Namespace foundations for Loreframe application windows.
+
+.loreframe {
+  font-family: var(--lf-font-body);
+  color: var(--lf-text);
+
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--lf-focus-ring);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loreframe,
+  .loreframe-block {
+    --lf-duration: 0ms;
+  }
+}

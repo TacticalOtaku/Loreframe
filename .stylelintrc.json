@@ -1,0 +1,18 @@
+{
+  "extends": [
+    "stylelint-config-standard-scss"
+  ],
+  "rules": {
+    "selector-class-pattern": [
+      "^(loreframe[a-z0-9-]*(__[a-z0-9-]+)?(--[a-z0-9-]+)?|theme-(light|dark)|themed|window-content|standard-form|form-group|form-fields|tableWrapper|active|selected|pm-dropdown|secret|revealed|reveal|ProseMirror|fa-[a-z0-9-]+)$",
+      {
+        "message": "Classes must be in the loreframe namespace (BEM-style) or known Foundry state classes"
+      }
+    ],
+    "custom-property-pattern": [
+      "^(lf|color|font)-[a-z0-9-]+$"
+    ],
+    "no-descending-specificity": null,
+    "declaration-no-important": true
+  }
+}
