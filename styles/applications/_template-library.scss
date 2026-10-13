@@ -1,0 +1,443 @@
+// Template Library (spec §14, §30). Parts render straight into .window-content, so the window element is the
+// size container and .window-content is the grid. Breakpoints follow the window width, not the viewport.
+
+@mixin reset-button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: auto;
+  min-height: var(--lf-control-height);
+  margin: 0;
+  padding: 0 var(--lf-space-2);
+  border: var(--lf-divider) solid transparent;
+  border-radius: var(--lf-radius-sm);
+  background: none;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  line-height: 1.3;
+  text-align: start;
+  cursor: pointer;
+  transition:
+    background-color var(--lf-duration),
+    border-color var(--lf-duration);
+}
+
+.loreframe-library {
+  container: loreframe-library / inline-size;
+
+  .window-content {
+    display: grid;
+    grid-template: "nav browser preview" minmax(0, 1fr) / 11.5rem minmax(0, 1fr) 19rem;
+    padding: 0;
+    overflow: hidden;
+  }
+}
+
+/* ---------------------------------- Navigation ---------------------------------- */
+
+.loreframe-library__nav {
+  grid-area: nav;
+  padding: var(--lf-space-3) var(--lf-space-2);
+  border-inline-end: var(--lf-divider) solid var(--lf-border);
+  overflow-y: auto;
+}
+
+.loreframe-library__categories {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.loreframe-library__category {
+  @include reset-button;
+
+  gap: var(--lf-space-2);
+  font-size: var(--lf-text-body);
+
+  i {
+    color: var(--lf-text-muted);
+  }
+
+  &:hover {
+    background: var(--lf-surface);
+  }
+
+  &[aria-current="true"] {
+    background: var(--lf-accent-soft);
+    box-shadow: inset var(--lf-rule) 0 0 var(--lf-accent);
+
+    i {
+      color: var(--lf-accent);
+    }
+  }
+}
+
+.loreframe-library__category-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loreframe-library__count {
+  color: var(--lf-text-muted);
+  font-size: var(--lf-text-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------- Browser ------------------------------------ */
+
+.loreframe-library__browser {
+  display: flex;
+  flex-direction: column;
+  grid-area: browser;
+  min-width: 0;
+  min-height: 0;
+}
+
+.loreframe-library__search {
+  position: relative;
+  flex: none;
+  padding: var(--lf-space-3);
+  border-block-end: var(--lf-divider) solid var(--lf-border);
+
+  i {
+    position: absolute;
+    inset: 50% auto auto calc(var(--lf-space-3) + var(--lf-space-2));
+    translate: 0 -50%;
+    color: var(--lf-text-muted);
+    pointer-events: none;
+  }
+
+  input {
+    width: 100%;
+    height: var(--lf-control-height);
+    padding-inline-start: calc(var(--lf-space-2) * 2 + var(--lf-icon-size));
+  }
+}
+
+.loreframe-library__results {
+  flex: 1;
+  min-height: 0;
+  padding: var(--lf-space-3);
+  overflow-y: auto;
+}
+
+.loreframe-library__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: var(--lf-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.loreframe-library__card {
+  position: relative;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.loreframe-library__card-main {
+  @include reset-button;
+
+  gap: var(--lf-space-3);
+  min-height: 3.75rem;
+  padding: var(--lf-space-2) calc(var(--lf-space-2) * 2 + var(--lf-icon-size)) var(--lf-space-2) var(--lf-space-2);
+  border-color: var(--lf-border);
+  background: var(--lf-surface);
+
+  &:hover {
+    border-color: var(--lf-border-strong);
+  }
+
+  .loreframe-library__card--selected & {
+    border-color: var(--lf-accent);
+    background: var(--lf-accent-soft);
+  }
+}
+
+.loreframe-library__thumb {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  overflow: hidden;
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface-raised);
+  color: var(--lf-text-muted);
+  font-size: 1.1rem;
+
+  img {
+    width: 100%;
+    height: 100%;
+    border: none;
+    object-fit: cover;
+  }
+
+  .loreframe-library__card--selected & {
+    color: var(--lf-accent);
+  }
+}
+
+.loreframe-library__card-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.loreframe-library__card-name {
+  overflow: hidden;
+  font-size: var(--lf-text-body);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loreframe-library__card-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--lf-text-muted);
+  font-size: var(--lf-text-meta);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.loreframe-library__badge {
+  flex: none;
+  align-self: flex-start;
+  padding: 0 var(--lf-space-1);
+  border: var(--lf-divider) solid var(--lf-border-strong);
+  border-radius: var(--lf-radius-sm);
+  color: var(--lf-text-muted);
+  font-size: var(--lf-text-meta);
+  text-transform: uppercase;
+}
+
+.loreframe-library__favorite {
+  @include reset-button;
+
+  position: absolute;
+  inset: var(--lf-space-1) var(--lf-space-1) auto auto;
+  justify-content: center;
+  width: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0;
+  color: var(--lf-text-muted);
+
+  &:hover {
+    color: var(--lf-text);
+  }
+
+  &[aria-pressed="true"] {
+    color: var(--lf-accent);
+  }
+}
+
+/* ----------------------------------- Preview ------------------------------------ */
+
+.loreframe-library__preview {
+  display: flex;
+  flex-direction: column;
+  grid-area: preview;
+  min-width: 0;
+  min-height: 0;
+  border-inline-start: var(--lf-divider) solid var(--lf-border);
+}
+
+.loreframe-library__preview-header {
+  flex: none;
+  padding: var(--lf-space-3) var(--lf-space-3) var(--lf-space-2);
+}
+
+.loreframe-library__preview-title.loreframe-library__preview-title {
+  margin: 0;
+  border: none;
+  font-family: var(--lf-font-display);
+  font-size: var(--lf-text-heading);
+  line-height: 1.2;
+}
+
+.loreframe-library__preview-desc {
+  margin: var(--lf-space-1) 0 0;
+  color: var(--lf-text-muted);
+  font-size: var(--lf-text-meta);
+}
+
+.loreframe-library__preview-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 var(--lf-space-3);
+  overflow-y: auto;
+}
+
+.loreframe-library__canvas {
+  padding: var(--lf-space-3);
+  border: var(--lf-divider) solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-background);
+  font-size: var(--lf-text-body);
+  user-select: none;
+}
+
+.loreframe-library__preview-footer {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--lf-space-2);
+  padding: var(--lf-space-3);
+}
+
+.loreframe-library__preset {
+  display: flex;
+  align-items: center;
+  gap: var(--lf-space-2);
+
+  label {
+    color: var(--lf-text-muted);
+    font-size: var(--lf-text-meta);
+    font-weight: 600;
+    letter-spacing: var(--lf-tracking-meta);
+    text-transform: uppercase;
+  }
+
+  select {
+    flex: 1;
+    min-inline-size: 0;
+  }
+}
+
+.loreframe-library__hint {
+  margin: 0;
+  color: var(--lf-text-muted);
+  font-size: var(--lf-text-meta);
+}
+
+.loreframe-library__insert {
+  @include reset-button;
+
+  justify-content: center;
+  gap: var(--lf-space-2);
+  border-color: var(--lf-accent);
+  background: var(--lf-accent);
+  color: var(--lf-accent-contrast);
+  font-weight: 600;
+
+  &:hover:not(:disabled) {
+    border-color: var(--lf-accent-hover);
+    background: var(--lf-accent-hover);
+  }
+
+  &:disabled {
+    border-color: var(--lf-border);
+    background: var(--lf-surface);
+    color: var(--lf-text-muted);
+    cursor: not-allowed;
+  }
+}
+
+.loreframe-library__empty {
+  margin: var(--lf-space-5) auto;
+  max-width: 24rem;
+  color: var(--lf-text-muted);
+  font-size: var(--lf-text-body);
+  text-align: center;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+/* --------------------------------- Responsive ----------------------------------- */
+
+// Standard: navigation + browser, preview as a strip under the browser.
+@container loreframe-library (width < 900px) {
+  .loreframe-library .window-content {
+    grid-template:
+      "nav browser" minmax(0, 1fr)
+      "nav preview" fit-content(50%) / 10.5rem minmax(0, 1fr); // capped by the window height, not the viewport
+  }
+
+  .loreframe-library__preview {
+    border-block-start: var(--lf-divider) solid var(--lf-border);
+    border-inline-start: none;
+  }
+}
+
+// Compact: categories become a scrolling row, cards a single-column list.
+@container loreframe-library (width < 600px) {
+  .loreframe-library .window-content {
+    grid-template:
+      "nav" auto
+      "browser" minmax(0, 1fr)
+      "preview" fit-content(50%) / minmax(0, 1fr);
+  }
+
+  .loreframe-library__nav {
+    padding: var(--lf-space-2);
+    border-block-end: var(--lf-divider) solid var(--lf-border);
+    border-inline-end: none;
+    overflow-x: auto;
+  }
+
+  .loreframe-library__categories {
+    flex-direction: row;
+    gap: var(--lf-space-1);
+  }
+
+  .loreframe-library__category {
+    width: auto;
+    white-space: nowrap;
+  }
+
+  .loreframe-library__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+// "My Templates": import/export toolbar and template actions in the preview footer.
+.loreframe-library__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lf-space-2);
+  padding: 0 var(--lf-space-3) var(--lf-space-2);
+
+  button {
+    flex: 1 1 auto;
+    width: auto;
+  }
+}
+
+.loreframe-library__template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--lf-space-1);
+
+  > .loreframe-library__hint {
+    flex-basis: 100%;
+  }
+
+  > button {
+    width: auto;
+    min-width: var(--lf-control-height);
+  }
+
+  > button:has(span) {
+    flex: 1 1 auto;
+  }
+}
+
+.loreframe-library__danger:hover {
+  color: var(--lf-danger);
+}

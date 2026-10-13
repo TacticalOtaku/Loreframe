@@ -1,0 +1,77 @@
+// Shared visual presets (spec §8) for structures that list them (NPC, Location, Wiki). A preset is a root class that
+// sets the `--lf-preset-*` properties the structures read; names carry `loreframe-preset__name`.
+
+.loreframe-npc,
+.loreframe-location,
+.loreframe-wiki {
+  --lf-preset-accent: var(--lf-accent);
+  --lf-preset-label: var(--lf-preset-accent);
+  --lf-preset-frame: var(--lf-border-strong);
+  --lf-preset-surface: transparent;
+  --lf-preset-rule: var(--lf-divider) solid var(--lf-preset-frame);
+  --lf-preset-name-font: var(--lf-font-display);
+  --lf-preset-name-case: none;
+  --lf-preset-pad: var(--lf-space-4);
+
+  position: relative;
+  padding: var(--lf-preset-pad);
+  background: var(--lf-preset-surface);
+}
+
+
+// Editorial: magazine profile — rules above and below, display serif, no box.
+.loreframe-preset--editorial {
+  --lf-preset-pad: var(--lf-space-4) 0;
+
+  border-block: var(--lf-rule) solid var(--lf-preset-accent);
+
+  .loreframe-preset__name.loreframe-preset__name {
+    padding-block-end: var(--lf-space-1);
+    border-block-end: var(--lf-divider) solid var(--lf-preset-frame);
+  }
+}
+
+// Minimal: the content only — no frame, neutral labels, body typeface.
+.loreframe-preset--minimal {
+  --lf-preset-pad: 0;
+  --lf-preset-label: var(--lf-text-muted);
+  --lf-preset-frame: var(--lf-border);
+  --lf-preset-name-font: var(--lf-font-body);
+}
+
+// Arcane: a thin double frame with corner marks, in the lore colour.
+.loreframe-preset--arcane {
+  --lf-preset-accent: var(--lf-lore);
+  --lf-preset-frame: color-mix(in srgb, var(--lf-lore) 45%, transparent);
+  --lf-preset-surface: color-mix(in srgb, var(--lf-lore) 6%, transparent);
+  --lf-preset-name-case: uppercase;
+  --lf-preset-pad: var(--lf-space-5);
+
+  border: 3px double var(--lf-preset-frame);
+  border-radius: var(--lf-radius-sm);
+
+  .loreframe-preset__name.loreframe-preset__name {
+    letter-spacing: 0.08em;
+  }
+
+  &::before,
+  &::after {
+    content: "";
+    position: absolute;
+    inline-size: 0.9rem;
+    block-size: 0.9rem;
+    border: var(--lf-divider) solid var(--lf-preset-accent);
+    pointer-events: none;
+  }
+
+  &::before {
+    inset: var(--lf-space-1) auto auto var(--lf-space-1);
+    border-width: var(--lf-divider) 0 0 var(--lf-divider);
+  }
+
+  &::after {
+    inset: auto var(--lf-space-1) var(--lf-space-1) auto;
+    border-width: 0 var(--lf-divider) var(--lf-divider) 0;
+  }
+}
+

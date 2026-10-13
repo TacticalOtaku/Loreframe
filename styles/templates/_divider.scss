@@ -1,0 +1,33 @@
+// Divider: a plain <hr> in content; the ornament is a masked pseudo-element on the wrapper.
+
+.loreframe-divider {
+  position: relative;
+  margin-block: var(--lf-space-5);
+}
+
+.loreframe-divider__rule.loreframe-divider__rule {
+  height: 0;
+  margin: 0;
+  border: none;
+  border-block-start: var(--lf-divider) solid color-mix(in srgb, var(--lf-accent) 55%, transparent);
+  background: none;
+}
+
+.loreframe-divider--ornament {
+  --lf-ornament-size: 0.75rem;
+
+  .loreframe-divider__rule {
+    mask-image: linear-gradient(90deg, transparent, #000 15%, #000 42%, transparent 46%, transparent 54%, #000 58%, #000 85%, transparent);
+  }
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: var(--lf-ornament-size);
+    height: var(--lf-ornament-size);
+    translate: -50% -50%;
+    background: var(--lf-accent);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M6 0 8 4 12 6 8 8 6 12 4 8 0 6 4 4Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+}

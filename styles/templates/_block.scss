@@ -1,0 +1,52 @@
+// Shared rules for every Loreframe block inside Journal content (view mode and the ProseMirror editor).
+
+.loreframe-block {
+  margin-block: var(--lf-space-4);
+  color: var(--lf-text);
+  line-height: var(--lf-leading);
+  overflow-wrap: anywhere;
+
+  > :first-child {
+    margin-block-start: 0;
+  }
+
+  > :last-child {
+    margin-block-end: 0;
+  }
+}
+
+// Image fields still showing the module placeholder: editable in the editor (and previewed in the library),
+// hidden everywhere else so readers never see placeholder art.
+[data-loreframe-field]:has(> img[src$="assets/placeholders/image.svg"]):not(
+    :is(.ProseMirror, .loreframe-library__canvas) *
+  ) {
+  display: none;
+}
+
+// GM-only regions inside a block (shared.ts secretRegion): Foundry's secret carries the hidden state, the region
+// only frames it. In view mode Foundry wraps the secret in <secret-block>, so it is not always a direct child.
+.loreframe-secret-region {
+  --lf-preset-label: var(--lf-secret);
+
+  section.secret {
+    margin: 0;
+    padding: var(--lf-space-2) var(--lf-space-3);
+    border-width: 0 0 0 var(--lf-rule);
+    border-style: dashed;
+    border-color: var(--lf-secret);
+    border-radius: 0 var(--lf-radius-sm) var(--lf-radius-sm) 0;
+
+    > :last-child {
+      margin-block-end: 0;
+    }
+  }
+
+  section.secret.revealed {
+    border-inline-start-style: solid;
+  }
+
+  // Players receive the page without the secret (TextEditor.enrichHTML): drop the empty frame.
+  &:not(:has(section.secret)) {
+    display: none;
+  }
+}

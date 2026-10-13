@@ -1,0 +1,31 @@
+// Shared Sass mixins.
+
+// Foundry's journal tables have borders, shading and text shadows; Loreframe tables start from a clean slate.
+@mixin table-reset {
+  width: 100%;
+  margin: 0;
+  border: none;
+  border-collapse: collapse;
+  background: none;
+
+  thead,
+  tbody,
+  tr,
+  th,
+  td {
+    border: none;
+    background: none;
+    color: inherit;
+    text-shadow: none;
+  }
+
+  th,
+  td {
+    padding: var(--lf-space-1) var(--lf-space-2);
+    vertical-align: top;
+  }
+
+  p {
+    margin: 0;
+  }
+}

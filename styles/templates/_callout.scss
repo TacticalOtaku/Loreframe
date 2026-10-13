@@ -1,0 +1,88 @@
+// Callout family: a quiet margin rule and tint, label set in small caps. Tones change the rule colour;
+// Read Aloud is framed boxed text; GM Note and Secret sit inside a bare Foundry secret section.
+
+.loreframe-callout {
+  --lf-callout-accent: var(--lf-accent);
+
+  padding: var(--lf-space-3) var(--lf-space-4);
+  border-inline-start: var(--lf-rule) solid var(--lf-callout-accent);
+  border-radius: 0 var(--lf-radius-sm) var(--lf-radius-sm) 0;
+  background: var(--lf-surface);
+
+  &--note {
+    --lf-callout-accent: var(--lf-info);
+  }
+
+  &--lore {
+    --lf-callout-accent: var(--lf-lore);
+  }
+
+  &--warning {
+    --lf-callout-accent: var(--lf-warning);
+  }
+
+  &--gm-note,
+  &--secret {
+    --lf-callout-accent: var(--lf-secret);
+
+    border-inline-start-style: dashed;
+  }
+
+  // Boxed text: a full frame and the display face make it read as "spoken" content.
+  &--read-aloud {
+    --lf-callout-accent: var(--lf-text-muted);
+
+    padding: var(--lf-space-3) var(--lf-space-5);
+    border: var(--lf-divider) solid var(--lf-border-strong);
+    border-radius: var(--lf-radius-sm);
+    background: var(--lf-surface-raised);
+    box-shadow: inset 0 0 0 var(--lf-space-1) var(--lf-surface);
+  }
+}
+
+// Doubled class beats Foundry's journal heading rules (font, size, border) without !important.
+.loreframe-callout__title.loreframe-callout__title {
+  margin: 0 0 var(--lf-space-1);
+  padding: 0;
+  border: none;
+  font-family: var(--lf-font-body);
+  font-size: var(--lf-text-meta);
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: var(--lf-tracking-meta);
+  text-transform: uppercase;
+  color: var(--lf-callout-accent);
+}
+
+.loreframe-callout__body {
+  font-size: var(--lf-text-body);
+
+  > :first-child {
+    margin-block-start: 0;
+  }
+
+  > :last-child {
+    margin-block-end: 0;
+  }
+
+  .loreframe-callout--read-aloud & {
+    font-family: var(--lf-font-display);
+    font-size: calc(var(--lf-text-body) * 1.1);
+    font-style: italic;
+  }
+}
+
+// A Foundry secret that only wraps one Loreframe block: the block supplies the visual treatment.
+section.secret:has(> .loreframe-block:only-of-type) {
+  padding: 0;
+  border: none;
+  background: none;
+
+  > .loreframe-block {
+    margin-block: var(--lf-space-2) var(--lf-space-4);
+  }
+}
+
+section.secret.revealed > .loreframe-callout {
+  border-inline-start-style: solid;
+}

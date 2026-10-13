@@ -1,0 +1,52 @@
+{
+  "name": "loreframe",
+  "version": "0.2.2",
+  "private": true,
+  "description": "Reusable visual blocks, layouts and RPG content templates for the Foundry VTT Journal editor.",
+  "author": "TacticalOtaku",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TacticalOtaku/Loreframe.git"
+  },
+  "homepage": "https://github.com/TacticalOtaku/Loreframe",
+  "bugs": {
+    "url": "https://github.com/TacticalOtaku/Loreframe/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "vite build",
+    "watch": "vite build --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . && stylelint \"styles/**/*.scss\"",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "deploy": "node tools/deploy.mjs",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run build",
+    "package": "node tools/package.mjs",
+    "release": "npm run check && npm run package"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.10.0",
+    "globals": "^17.12.0",
+    "handlebars": "^4.7.9",
+    "happy-dom": "^20.14.5",
+    "prettier": "^3.9.7",
+    "prosemirror-model": "^1.25.4",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-transform": "^1.12.0",
+    "prosemirror-view": "^1.41.8",
+    "sass": "^1.104.1",
+    "stylelint": "^17.15.0",
+    "stylelint-config-standard-scss": "^17.0.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.0",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
+  }
+}

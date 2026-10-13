@@ -1,0 +1,233 @@
+// NPC Compact Card and Dossier (spec §20). One structure, restyled by presets (spec §8) through the
+// `--lf-npc-*` properties below; layout collapses through flex/grid wrapping, never viewport queries.
+
+$placeholder: 'img[src$="assets/placeholders/image.svg"]';
+
+.loreframe-npc {
+  --lf-npc-gap: var(--lf-space-4);
+  --lf-npc-portrait: 9rem;
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--lf-npc-gap);
+  font-size: var(--lf-text-body);
+
+  &--dossier {
+    --lf-npc-portrait: 13rem;
+  }
+
+  &--density-compact {
+    --lf-npc-gap: var(--lf-space-3);
+    --lf-npc-portrait: 7rem;
+
+    &.loreframe-npc--dossier {
+      --lf-npc-portrait: 10rem;
+    }
+  }
+}
+
+// --------------------------------------------
+// Header: portrait beside identity            
+// --------------------------------------------
+
+.loreframe-npc__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--lf-npc-gap);
+
+  .loreframe-npc--portrait-right & {
+    flex-direction: row-reverse;
+  }
+
+  .loreframe-npc--portrait-top & {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.loreframe-npc__portrait {
+  // Grows to fill its row once the identity wraps below it, but never beyond a readable portrait size.
+  flex: 1 1 var(--lf-npc-portrait);
+  max-inline-size: calc(var(--lf-npc-portrait) * 1.35);
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-image-placeholder);
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border: none;
+    border-radius: inherit;
+
+    // Faces sit in the upper third of most portraits; tall images are cropped instead of stretching the card.
+    object-fit: cover;
+    object-position: center 20%;
+  }
+
+  > p {
+    margin: 0;
+  }
+
+  // The placeholder is a landscape drawing: show it whole instead of cropping it like a portrait.
+  > #{$placeholder} {
+    object-fit: contain;
+    object-position: center;
+  }
+
+  .loreframe-npc--portrait-top & {
+    flex: none;
+    max-inline-size: none;
+    aspect-ratio: 16 / 7;
+  }
+
+}
+
+.loreframe-npc__identity {
+  display: flex;
+  flex: 999 1 16rem;
+  flex-direction: column;
+  gap: var(--lf-space-1);
+  min-inline-size: 0;
+
+  .loreframe-npc--portrait-top & {
+    flex: none;
+  }
+}
+
+// Doubled classes outrank Foundry's journal heading rules (size, border, font) without !important.
+.loreframe-npc__name.loreframe-npc__name {
+  margin: 0;
+  padding: 0;
+  border: none;
+  color: var(--lf-text);
+  font-family: var(--lf-preset-name-font);
+  font-size: calc(var(--lf-text-heading) * 1.25);
+  font-weight: 700;
+  line-height: 1.15;
+  text-transform: var(--lf-preset-name-case);
+  overflow-wrap: anywhere;
+  hyphens: auto;
+
+  .loreframe-npc--dossier & {
+    font-size: var(--lf-text-display);
+  }
+}
+
+.loreframe-npc__role.loreframe-npc__role {
+  margin: 0;
+  color: var(--lf-text-muted);
+  font-style: italic;
+}
+
+.loreframe-npc__meta {
+  display: flex;
+  flex-wrap: wrap;
+  color: var(--lf-text-muted);
+  font-size: var(--lf-text-meta);
+  font-weight: 600;
+  letter-spacing: var(--lf-tracking-meta);
+  text-transform: uppercase;
+
+  > p {
+    margin: 0;
+  }
+
+  > p + p::before {
+    content: "·";
+    margin-inline: 0.45em;
+    color: var(--lf-preset-accent);
+  }
+}
+
+.loreframe-npc__summary,
+.loreframe-npc__text {
+  > :first-child {
+    margin-block-start: 0;
+  }
+
+  > :last-child {
+    margin-block-end: 0;
+  }
+}
+
+.loreframe-npc__summary {
+  margin-block-start: var(--lf-space-2);
+  line-height: var(--lf-leading);
+}
+
+// --------------------------------------------
+// Labels, facts, sections                     
+// --------------------------------------------
+
+.loreframe-npc__label.loreframe-npc__label {
+  margin: 0 0 var(--lf-space-1);
+  padding: 0;
+  border: none;
+  color: var(--lf-preset-label);
+  font-family: var(--lf-font-body);
+  font-size: var(--lf-text-meta);
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: var(--lf-tracking-meta);
+  text-transform: uppercase;
+}
+
+.loreframe-npc__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  gap: var(--lf-space-2) var(--lf-npc-gap);
+  padding-block: var(--lf-space-2);
+  border-block: var(--lf-preset-rule);
+}
+
+.loreframe-npc__fact-value.loreframe-npc__fact-value {
+  margin: 0;
+}
+
+.loreframe-npc__group {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+  gap: var(--lf-space-3) var(--lf-space-5);
+  padding-block-start: var(--lf-npc-gap);
+  border-block-start: var(--lf-preset-rule);
+}
+
+.loreframe-npc__section {
+  min-inline-size: 0;
+}
+
+// Bestiary is NPC-only; the shared presets live in _presets.scss.
+// Bestiary: stat-block heritage — tinted page, heavy red rules, tapered section dividers.
+.loreframe-npc.loreframe-preset--bestiary {
+  --lf-preset-accent: var(--lf-bestiary);
+  --lf-preset-frame: var(--lf-bestiary);
+  --lf-preset-surface: var(--lf-bestiary-surface);
+  --lf-preset-name-case: uppercase;
+  --lf-preset-rule: 0 solid transparent;
+
+  border-block: 4px solid var(--lf-bestiary);
+  box-shadow: var(--lf-shadow-sm);
+
+  .loreframe-npc__name.loreframe-npc__name {
+    color: var(--lf-bestiary);
+    letter-spacing: 0.04em;
+  }
+
+  .loreframe-npc__facts,
+  .loreframe-npc__group {
+    position: relative;
+  }
+
+  .loreframe-npc__facts::before,
+  .loreframe-npc__group::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    block-size: 2px;
+    background: linear-gradient(90deg, var(--lf-bestiary), transparent);
+  }
+}
