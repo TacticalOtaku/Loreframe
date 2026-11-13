@@ -1,5 +1,5 @@
 import type { LoreframeTemplateDefinition, TemplateRendererFn } from "../../types";
-import { imageField, paragraphs, text } from "../shared";
+import { imageField, paragraphs, selectOption, text } from "../shared";
 
 export const MEDIA_RENDERER = "media";
 export const HERO_IMAGE_RENDERER = "hero-image";
@@ -10,7 +10,7 @@ const SIDES = ["left", "right"];
  * or a slot that accepts other blocks (Media + Content layout).
  */
 export const mediaRenderer: TemplateRendererFn = ({ definition, values, localize }) => {
-  const side = typeof values.side === "string" && SIDES.includes(values.side) ? values.side : "left";
+  const side = selectOption(values, "side", SIDES);
   const isSlot = definition.rendererOptions?.region === "slot";
   return {
     tag: "div",

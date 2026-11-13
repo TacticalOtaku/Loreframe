@@ -2,6 +2,8 @@ import type { Node as PMNode, ResolvedPos } from "prosemirror-model";
 import type * as PMStateModule from "prosemirror-state";
 import type { EditorState, Transaction } from "prosemirror-state";
 import { DATA_ATTR } from "../constants";
+import type { TemplateCatalog } from "../core/template-catalog";
+import { logger } from "../utils/logger";
 import { getHtmlAttribute, isLoreframeRoot, isLoreframeSlot, isSecretWrapper } from "./node-attrs";
 
 /** The parts of `prosemirror-state` this module needs; Foundry supplies them as `ProseMirror.state`. */
@@ -10,10 +12,12 @@ export type StateModule = Pick<typeof PMStateModule, "Selection" | "TextSelectio
 export interface InsertOptions {
   /** `data-loreframe-field` whose first textblock receives the selection. */
   focusField?: string;
+  /** Insert near this document position instead of the current selection (single undo step). */
+  at?: number;
 }
 
 /**
- * Build a transaction that places a block-level node at the user's cursor.
+ * Build a transaction that places a block-level node at the user's cursor (or near `options.at`).
  *
  * - Inside a Loreframe block, blocks nest only in slot regions (`data-loreframe-slot`). From any other part of a
  *   block (label, content fields) the new block goes after that Loreframe block and the selection is kept, so
@@ -31,13 +35,19 @@ export function insertBlockTransaction(
   options: InsertOptions = {},
 ): Transaction {
   const tr = state.tr;
-  const hostDepth = enclosingBlockDepth(state.selection.$from);
+  if (options.at !== undefined) {
+    const pos = Math.max(0, Math.min(options.at, tr.doc.content.size));
+    tr.setSelection(pm.Selection.near(tr.doc.resolve(pos)));
+  }
+
+  const { $from, empty } = tr.selection;
+  const hostDepth = enclosingBlockDepth($from);
   let from: number;
   let to: number;
   if (hostDepth !== null) {
-    from = to = state.selection.$from.after(hostDepth);
+    from = to = $from.after(hostDepth);
   } else {
-    if (!state.selection.empty) tr.deleteSelection();
+    if (!empty) tr.deleteSelection();
     ({ from, to } = cursorRange(tr, block));
   }
 
@@ -141,4 +151,89 @@ function fieldTextRange(
     return true;
   });
   return range;
+}
+
+/* -------------------------------------------- */
+/*  Template insertion service                  */
+/* -------------------------------------------- */
+
+/** The parts of a ProseMirror EditorView template insertion needs. */
+export interface InsertTarget {
+  readonly editable: boolean;
+  readonly isDestroyed?: boolean;
+  readonly state: EditorState;
+  dispatch(tr: Transaction): void;
+  focus(): void;
+}
+
+export interface InsertTemplateOptions {
+  values?: Readonly<Record<string, unknown>>;
+  preset?: string;
+  /** Insert at this document position instead of the current selection (e.g. a drop point). */
+  at?: number;
+}
+
+export interface TemplateInserterDeps {
+  catalog: Pick<TemplateCatalog, "resolveEntry" | "recordUse">;
+  renderNew(
+    templateId: string,
+    options?: { values?: Readonly<Record<string, unknown>>; preset?: string | null },
+  ): string;
+  /** Parse HTML with the editor's schema (Foundry: `ProseMirror.dom.parseString`). */
+  parseHtml(html: string): PMNode;
+  pm: StateModule;
+  notifyError(key: string): void;
+}
+
+export interface TemplateInserter {
+  /**
+   * Resolve a template or user-template id, render and insert it in one transaction, focus the editor, and
+   * record recent use. Explicit `preset` values are validated strictly against the resolved definition.
+   */
+  insert(view: InsertTarget, entryId: string, options?: InsertTemplateOptions): boolean;
+}
+
+export function createTemplateInserter(deps: TemplateInserterDeps): TemplateInserter {
+  return {
+    insert(view, entryId, options = {}) {
+      if (view.isDestroyed || !view.editable) {
+        logger.warn(`Cannot insert "${entryId}": the editor is read-only`);
+        deps.notifyError("LOREFRAME.Error.NoEditor");
+        return false;
+      }
+
+      const entry = deps.catalog.resolveEntry(entryId);
+      try {
+        if (!entry) throw new Error(`Unknown template "${entryId}"`);
+        const mergedValues =
+          entry.values || options.values ? { ...entry.values, ...options.values } : undefined;
+        const preset = options.preset !== undefined ? options.preset : entry.preset;
+        const renderOptions = {
+          ...(mergedValues ? { values: mergedValues } : {}),
+          ...(preset === undefined ? {} : { preset }),
+        };
+        const html = Object.keys(renderOptions).length
+          ? deps.renderNew(entry.definition.id, renderOptions)
+          : deps.renderNew(entry.definition.id);
+        const block = deps.parseHtml(html).firstChild;
+        if (!block) throw new Error(`Template "${entry.definition.id}" produced no content`);
+
+        const tr = insertBlockTransaction(view.state, block, deps.pm, {
+          focusField: entry.definition.focusField,
+          ...(options.at === undefined ? {} : { at: options.at }),
+        });
+        view.dispatch(tr);
+        view.focus();
+      } catch (error) {
+        logger.error(`Inserting template "${entryId}" failed`, error);
+        deps.notifyError("LOREFRAME.Error.InsertFailed");
+        return false;
+      }
+
+      Promise.resolve(deps.catalog.recordUse(entry.id)).catch((error: unknown) =>
+        logger.error(`Could not remember recent use of "${entry.id}"`, error),
+      );
+      return true;
+    },
+  };
 }

@@ -1,16 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as pmState from "prosemirror-state";
 import { EditorState, TextSelection } from "prosemirror-state";
 import type { Node as PMNode } from "prosemirror-model";
 import {
   blockAt,
   blockVersionState,
+  createBlockLifecycle,
   deleteBlockTransaction,
   duplicateBlockTransaction,
   locateBlock,
   movedOutOfBlock,
   readBlockValues,
   rebuildBlockTransaction,
+  type BlockUiPort,
+  type BlockView,
 } from "../src/editor/block-document";
 import { parseString, serializeString } from "./helpers/schema";
 import { testCore } from "./helpers/core";
@@ -271,7 +274,6 @@ describe("block versions", () => {
     expect(state("x")).toBe("invalid");
     expect(state("0")).toBe("invalid");
   });
-
 });
 
 describe("rebuild keeps the author's writing (0.1.1)", () => {
@@ -357,5 +359,169 @@ describe("rebuild keeps the author's writing (0.1.1)", () => {
       );
     const out = rebuild(html, "l", "location", { "info-side": "left" }).html;
     expect(out).toContain("<p>sub item</p>");
+  });
+
+  it("refuses to rebuild a block whose stored version does not match its template", () => {
+    const html = core.renderer
+      .render("note", { instanceId: "old" })
+      .replace('data-loreframe-version="1"', 'data-loreframe-version="2"');
+    const state = stateOf(html);
+    const location = locateBlock(state.doc, "old")!;
+    expect(() =>
+      rebuildBlockTransaction(state, location, freshHost("note", "old", {}), def("note"), pmState),
+    ).toThrow(/version state/);
+  });
+});
+
+describe("createBlockLifecycle", () => {
+  function setup(
+    html: string,
+    options: { editable?: boolean; destroyed?: boolean; core?: ReturnType<typeof testCore> } = {},
+  ) {
+    const instanceCore = options.core ?? core;
+    let nextId = 0;
+    const ui: BlockUiPort = {
+      notifyWarn: vi.fn(),
+      notifyError: vi.fn(),
+      notifyInfo: vi.fn(),
+      localize: (key) => key.split(".").at(-1) ?? key,
+      confirm: vi.fn(async () => true),
+    };
+    const view = {
+      editable: options.editable ?? true,
+      isDestroyed: options.destroyed ?? false,
+      state: EditorState.create({ doc: parseString(html) }),
+      dispatch: vi.fn((tr: pmState.Transaction) => {
+        view.state = view.state.apply(tr);
+      }),
+      focus: vi.fn(),
+    } satisfies BlockView & { state: EditorState };
+    const lifecycle = createBlockLifecycle({
+      templates: instanceCore.templates,
+      renderer: instanceCore.renderer,
+      pm: pmState,
+      parseHtml: parseString,
+      newInstanceId: () => `dup${++nextId}`,
+      ui,
+    });
+    return { lifecycle, view, ui, instanceCore };
+  }
+
+  it("rejects missing, read-only, outdated, newer or invalid blocks when preparing edit", async () => {
+    const { lifecycle, view, ui } = setup(core.renderer.render("note", { instanceId: "n1" }), {
+      editable: false,
+    });
+    expect(await lifecycle.prepareEdit(view, "missing")).toBeNull();
+    expect(ui.notifyWarn).toHaveBeenLastCalledWith("LOREFRAME.Error.BlockMissing");
+
+    expect(await lifecycle.prepareEdit(view, "n1")).toBeNull();
+    expect(ui.notifyWarn).toHaveBeenLastCalledWith("LOREFRAME.Error.NoEditor");
+
+    const versioned = testCore();
+    versioned.templates.register({
+      id: "v-note",
+      version: 2,
+      name: "VNote",
+      category: "blocks",
+      type: "block",
+      renderer: "callout",
+      rendererOptions: { tone: "note" },
+      fields: [{ id: "body", type: "richText", label: "b", default: "Body" }],
+    });
+    const outdated = setup(
+      versioned.renderer
+        .render("v-note", { instanceId: "vn" })
+        .replace('data-loreframe-version="2"', 'data-loreframe-version="1"'),
+      { core: versioned },
+    );
+    expect(await outdated.lifecycle.prepareEdit(outdated.view, "vn")).toBeNull();
+    expect(outdated.ui.confirm).not.toHaveBeenCalled();
+    expect(outdated.ui.notifyWarn).toHaveBeenLastCalledWith("LOREFRAME.Error.BlockVersion");
+
+    const newer = setup(
+      core.renderer
+        .render("note", { instanceId: "n2" })
+        .replace('data-loreframe-version="1"', 'data-loreframe-version="9"'),
+    );
+    expect(await newer.lifecycle.prepareEdit(newer.view, "n2")).toBeNull();
+    expect(newer.ui.notifyWarn).toHaveBeenLastCalledWith("LOREFRAME.Error.BlockVersion");
+
+    const current = setup(core.renderer.render("note", { instanceId: "n3" }));
+    expect((await current.lifecycle.prepareEdit(current.view, "n3"))?.version).toBe("current");
+  });
+
+  it("applies edits with section-removal confirmation and returns false when cancelled or failing", async () => {
+    const html = core.renderer.render("npc-dossier", {
+      instanceId: "d1",
+      values: { "show-fears": true, fears: "Spiders" },
+    });
+    const cancelled = setup(html);
+    vi.mocked(cancelled.ui.confirm).mockResolvedValueOnce(false);
+    expect(
+      await cancelled.lifecycle.applyEdit(cancelled.view, "d1", {
+        changed: { "show-fears": false },
+        edited: { "show-fears": false },
+      }),
+    ).toBe(false);
+    expect(cancelled.ui.confirm).toHaveBeenCalledOnce();
+    expect(cancelled.view.dispatch).not.toHaveBeenCalled();
+
+    // Returns false and warns when block disappears while confirmation dialog is open.
+    const vanished = setup(html);
+    vi.mocked(vanished.ui.confirm).mockImplementationOnce(async () => {
+      vanished.view.state = EditorState.create({ doc: parseString("<p>Removed</p>") });
+      return true;
+    });
+    expect(
+      await vanished.lifecycle.applyEdit(vanished.view, "d1", {
+        changed: { "show-fears": false },
+        edited: { "show-fears": false },
+      }),
+    ).toBe(false);
+    expect(vanished.ui.notifyWarn).toHaveBeenCalledWith("LOREFRAME.Error.BlockMissing");
+
+    // Returns false and notifies error when re-rendering fails (e.g., unsupported preset).
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const failed = setup(core.renderer.render("note", { instanceId: "n1" }));
+    expect(
+      await failed.lifecycle.applyEdit(failed.view, "n1", {
+        changed: { title: "Updated" },
+        edited: { title: "Updated" },
+        nextPreset: "unsupported-preset",
+      }),
+    ).toBe(false);
+    expect(failed.ui.notifyError).toHaveBeenCalledWith("LOREFRAME.Error.UpdateFailed");
+  });
+
+  it("applies valid edits, reports moved writing, and supports duplicate & conditional delete", async () => {
+    const noteWithOrphan = core.renderer
+      .render("note", { instanceId: "n1", values: { title: "T", body: "B" } })
+      .replace("</h4>", "</h4><p>Stray writing</p>");
+    const { lifecycle, view, ui } = setup(noteWithOrphan);
+
+    expect(
+      await lifecycle.applyEdit(view, "n1", {
+        changed: { title: "Renamed" },
+        edited: { title: "Renamed" },
+      }),
+    ).toBe(true);
+    expect(ui.notifyInfo).toHaveBeenCalledWith("LOREFRAME.Inspector.MovedOut", { count: "1" });
+    expect(view.focus).toHaveBeenCalled();
+
+    // Unwritten simple block deletes without confirmation.
+    const clean = setup(core.renderer.render("note", { instanceId: "simple" }));
+    expect(await clean.lifecycle.deleteWithConfirmation(clean.view, "simple")).toBe(true);
+    expect(clean.ui.confirm).not.toHaveBeenCalled();
+
+    // Layout asks confirmation and respects cancellation.
+    const layout = setup(core.renderer.render("two-columns", { instanceId: "cols" }));
+    vi.mocked(layout.ui.confirm).mockResolvedValueOnce(false);
+    expect(await layout.lifecycle.deleteWithConfirmation(layout.view, "cols")).toBe(false);
+    expect(layout.ui.confirm).toHaveBeenCalledOnce();
+    expect(locateBlock(layout.view.state.doc, "cols")).not.toBeNull();
+
+    // Duplicate generates fresh instance id.
+    expect(layout.lifecycle.duplicate(layout.view, "cols")).toBe(true);
+    expect(locateBlock(layout.view.state.doc, "dup1")).not.toBeNull();
   });
 });

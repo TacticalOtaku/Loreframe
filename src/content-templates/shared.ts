@@ -10,6 +10,12 @@ export function text(values: TemplateValues, field: string): string {
   return typeof value === "string" ? value : "";
 }
 
+/** Read an option value from `allowed`, falling back to its first entry when absent or invalid. */
+export function selectOption(values: TemplateValues, field: string, allowed: readonly string[]): string {
+  const value = values[field];
+  return typeof value === "string" && allowed.includes(value) ? value : (allowed[0] ?? "");
+}
+
 /** Plain text → paragraphs, splitting on blank lines. Always yields at least one (possibly empty) paragraph. */
 export function paragraphs(value: string): TreeElement[] {
   const parts = value

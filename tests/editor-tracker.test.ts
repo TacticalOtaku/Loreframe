@@ -66,6 +66,25 @@ describe("EditorTracker", () => {
     expect(tracker.active()).toBe(writable);
   });
 
+  it("prefers a usable target in resolve() and falls back to active() otherwise", () => {
+    const tracker = new EditorTracker();
+    const fallback = mount(tracker);
+    const preferred = mount(tracker);
+    tracker.markActive(fallback);
+    expect(tracker.resolve(preferred)).toBe(preferred);
+
+    preferred.destroy();
+    expect(tracker.resolve(preferred)).toBe(fallback);
+
+    const detached = mount(tracker);
+    detached.dom.parentElement?.remove();
+    expect(tracker.resolve(detached)).toBe(fallback);
+
+    const readOnly = mount(tracker, false);
+    expect(tracker.resolve(readOnly)).toBe(fallback);
+    expect(tracker.resolve(null)).toBe(fallback);
+  });
+
   it("ignores views it does not track", () => {
     const tracker = new EditorTracker();
     const foreign = new EditorView(document.createElement("div"), {

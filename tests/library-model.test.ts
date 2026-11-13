@@ -1,10 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
+import * as pmState from "prosemirror-state";
+import { EditorState, Plugin, TextSelection } from "prosemirror-state";
+import { EditorView } from "prosemirror-view";
+import { TemplateCatalog, type PreferenceKey, type UserTemplate } from "../src/core/template-catalog";
+import { buildEditorTrackerPlugin, EditorTracker } from "../src/editor/editor-tracker";
+import { createTemplateInserter } from "../src/editor/insert";
 import {
   buildLibraryModel,
+  createLibrarySession,
   matchesQuery,
   type LibraryModelInput,
+  type LibraryUiPort,
 } from "../src/applications/template-library/library-model";
 import type { LoreframeTemplateDefinition } from "../src/types";
+import { parseString } from "./helpers/schema";
+import { testCore } from "./helpers/core";
 
 function def(id: string, overrides: Partial<LoreframeTemplateDefinition> = {}): LoreframeTemplateDefinition {
   return {
@@ -274,5 +284,184 @@ describe("library user templates", () => {
       input({ state: { category: "mine", query: "", selectedId: null, preset: null } }),
     );
     expect(empty.empty).toBe("mine");
+  });
+});
+
+describe("createLibrarySession", () => {
+  const merchant: UserTemplate = {
+    schemaVersion: 1,
+    id: "user-merchant",
+    name: "Merchant",
+    description: "",
+    base: "npc-dossier",
+    preset: "arcane",
+    values: { "show-rumours": false },
+  };
+
+  function setupSession(
+    options: { userTemplates?: UserTemplate[]; editable?: boolean; confirmDelete?: boolean } = {},
+  ) {
+    const core = testCore();
+    let stored: unknown[] = options.userTemplates ?? [merchant];
+    const prefs: Record<PreferenceKey, string[]> = { favorites: [], recent: [] };
+    let seq = 0;
+
+    const catalog = new TemplateCatalog({
+      templates: core.templates,
+      presets: core.presets,
+      renderer: core.renderer,
+      systemId: () => "dnd5e",
+      localize: (key) => key.split(".").at(-2) ?? key,
+      newId: () => `id${++seq}`,
+      formatCopyName: (name) => `${name} (Copy)`,
+      storage: {
+        readUserTemplates: () => stored,
+        writeUserTemplates: async (list) => {
+          stored = list;
+        },
+        readPreference: (k) => prefs[k],
+        writePreference: async (k, val) => {
+          prefs[k] = val;
+        },
+      },
+    });
+
+    const tracker = new EditorTracker();
+    const mount = document.createElement("div");
+    document.body.append(mount);
+    const view = new EditorView(mount, {
+      state: EditorState.create({
+        doc: parseString("<p>Hello</p>"),
+        selection: undefined,
+        plugins: [buildEditorTrackerPlugin({ Plugin, tracker })],
+      }),
+      editable: () => options.editable ?? true,
+    });
+    view.state = view.state.apply(view.state.tr.setSelection(TextSelection.create(view.state.doc, 6)));
+    tracker.markActive(view);
+
+    const ui: LibraryUiPort = {
+      localize: (key) => key,
+      notifyWarn: vi.fn(),
+      notifyError: vi.fn(),
+      notifyInfo: vi.fn(),
+      confirmDeleteUserTemplate: vi.fn(async () => options.confirmDelete ?? true),
+      openTemplateEditor: vi.fn(),
+      saveJsonFile: vi.fn(),
+    };
+
+    const inserter = createTemplateInserter({
+      catalog,
+      renderNew: core.renderNew,
+      parseHtml: parseString,
+      pm: pmState,
+      notifyError: ui.notifyError,
+    });
+
+    const session = createLibrarySession({ catalog, tracker, inserter, ui });
+    return {
+      session,
+      catalog,
+      tracker,
+      inserter,
+      view,
+      ui,
+      prefs,
+      cleanup: () => {
+        if (!view.isDestroyed) view.destroy();
+        mount.remove();
+      },
+    };
+  }
+
+  it("keeps snapshot pure, resolves compatible preset on insert, and updates recency", () => {
+    const s = setupSession();
+    try {
+      const insertSpy = vi.spyOn(s.inserter, "insert");
+      s.session.selectTemplate("npc-dossier");
+      s.session.selectPreset("arcane");
+      expect(s.session.snapshot().preset).toBe("arcane");
+
+      // Switch to template without presets — session remembers chosen preset for other templates, but inserts note with none.
+      s.session.selectTemplate("note");
+      const snap = s.session.snapshot();
+      expect(snap.preset).toBeNull();
+      // Repeated snapshot calls do not mutate state or differ.
+      expect(s.session.snapshot().selected?.id).toBe(snap.selected?.id);
+      expect(s.session.insertSelected()).toBe(true);
+      expect(insertSpy).toHaveBeenCalledWith(s.view, "note", {});
+      expect(s.catalog.recent()).toEqual(["note"]);
+    } finally {
+      s.cleanup();
+    }
+  });
+
+  it("warns when no editable editor exists and respects pinned editor fallback", () => {
+    const s = setupSession({ editable: false });
+    try {
+      expect(s.session.canInsert()).toBe(false);
+      expect(s.session.insertSelected()).toBe(false);
+      expect(s.ui.notifyWarn).toHaveBeenCalledWith("LOREFRAME.Error.NoEditor");
+    } finally {
+      s.cleanup();
+    }
+  });
+
+  it("duplicates, deletes (auto-cleaning favorites/recent), exports, imports and notifies subscribers", async () => {
+    const s = setupSession();
+    try {
+      const refreshed = vi.fn();
+      const disconnect = s.session.connect(refreshed);
+
+      await s.session.toggleFavorite("user-merchant");
+      expect(refreshed).toHaveBeenLastCalledWith(["nav", "browser", "preview"]);
+
+      s.session.selectCategory("mine");
+      s.session.selectTemplate("user-merchant");
+      expect(await s.session.duplicateSelected()).toBe(true);
+      expect(s.session.snapshot().selected?.id).toBe("user-id1");
+
+      s.session.selectTemplate("user-merchant");
+      expect(await s.session.deleteSelected()).toBe(true);
+      expect(s.prefs.favorites).toEqual([]);
+      expect(s.catalog.getUserTemplate("user-merchant")).toBeUndefined();
+
+      expect(s.session.exportTemplates(true)).toBe(true);
+      expect(s.ui.saveJsonFile).toHaveBeenCalledWith(
+        expect.stringContaining("Merchant (Copy)"),
+        "loreframe-templates.json",
+      );
+
+      disconnect();
+      const count = refreshed.mock.calls.length;
+      await s.session.toggleFavorite("note");
+      expect(refreshed).toHaveBeenCalledTimes(count);
+    } finally {
+      s.cleanup();
+    }
+  });
+
+  it("handles import errors and customize/edit routing cleanly", async () => {
+    const s = setupSession();
+    try {
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      expect(await s.session.importTemplates(async () => "{bad")).toBe(false);
+      expect(s.ui.notifyError).toHaveBeenCalledWith("LOREFRAME.UserTemplates.ImportFailed");
+
+      s.session.selectTemplate("npc-card");
+      s.session.selectPreset("arcane");
+      s.session.customizeSelected();
+      expect(s.ui.openTemplateEditor).toHaveBeenCalledWith({
+        mode: "create",
+        base: "npc-card",
+        preset: "arcane",
+      });
+
+      s.session.selectTemplate("user-merchant");
+      s.session.customizeSelected();
+      expect(s.ui.openTemplateEditor).toHaveBeenLastCalledWith({ mode: "edit", id: "user-merchant" });
+    } finally {
+      s.cleanup();
+    }
   });
 });

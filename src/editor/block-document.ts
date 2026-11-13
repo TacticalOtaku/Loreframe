@@ -5,8 +5,11 @@ import { DATA_ATTR } from "../constants";
 import { PLACEHOLDER_IMAGE } from "../content-templates/shared";
 import { CLASS_PATTERN } from "../core/element-tree";
 import { parseLink } from "../core/links";
-import { VERSION_PATTERN } from "../core/template-parser";
+import type { TemplateRegistry } from "../core/template-registry";
+import type { TemplateRenderer } from "../core/template-renderer";
 import type { GalleryItem, LinkItem, LoreframeTemplateDefinition, TemplateValues } from "../types";
+import { escapeHtml } from "../utils/html";
+import { logger } from "../utils/logger";
 import {
   getHtmlAttribute,
   getHtmlClasses,
@@ -74,9 +77,11 @@ export function blockAt($pos: ResolvedPos): BlockLocation | null {
 
 export type BlockVersionState = "current" | "outdated" | "newer" | "invalid";
 
+const VERSION_PATTERN = /^[1-9]\d*$/;
+
 /**
- * How a block's stored version relates to its registered template (same rules as the template parser). Only
- * current blocks may be rebuilt: rendering a newer or invalid block with this template would destroy its markup.
+ * How a block's stored version relates to its registered template. Only current blocks may be rebuilt: rendering an
+ * outdated, newer or invalid block with this template would destroy its markup.
  */
 export function blockVersionState(root: PMNode, definition: LoreframeTemplateDefinition): BlockVersionState {
   const raw = getHtmlAttribute(root, DATA_ATTR.version);
@@ -334,6 +339,12 @@ export function rebuildBlockTransaction(
   definition: LoreframeTemplateDefinition,
   pm: StateModule,
 ): Transaction {
+  const versionState = blockVersionState(location.root, definition);
+  if (versionState !== "current") {
+    throw new Error(
+      `Cannot rebuild "${definition.id}" block "${location.instanceId}" with version state "${versionState}"`,
+    );
+  }
   const freshWrapped = isSecretWrapper(freshHost);
   const freshRoot = (freshWrapped ? freshHost.firstChild : freshHost) ?? freshHost;
   const grafted = graftBlock(freshRoot, location.root, definition);
@@ -429,4 +440,266 @@ export function deleteBlockTransaction(
   }
   tr.delete(from, to);
   return tr.setSelection(pm.Selection.near(tr.doc.resolve(Math.min(from, tr.doc.content.size)), -1));
+}
+
+/** Optional sections (`show-<field>` toggles) an edit switches off although the author wrote in them. */
+export function sectionsToRemove(
+  definition: LoreframeTemplateDefinition,
+  original: TemplateValues,
+  edited: TemplateValues,
+  written: readonly string[],
+): string[] {
+  return written.filter((id) => {
+    const toggle = `show-${id}`;
+    const declared = definition.fields?.some((field) => field.id === toggle && field.type === "boolean");
+    return declared && original[toggle] !== false && edited[toggle] === false;
+  });
+}
+
+/* -------------------------------------------- */
+/*  Block lifecycle orchestration               */
+/* -------------------------------------------- */
+
+export interface BlockView {
+  readonly editable: boolean;
+  readonly isDestroyed?: boolean;
+  readonly state: EditorState;
+  dispatch(tr: Transaction): void;
+  focus(): void;
+}
+
+export interface BlockSnapshot {
+  definition: LoreframeTemplateDefinition;
+  values: TemplateValues;
+  preset: string | null;
+  /** Only "current" blocks can be edited; see `blockVersionState`. */
+  version: BlockVersionState;
+}
+
+export interface BlockEditInput {
+  changed: TemplateValues;
+  edited: TemplateValues;
+  nextPreset?: string;
+}
+
+export interface BlockConfirmOptions {
+  titleKey: string;
+  contentKey: string;
+  contentFormat?: Record<string, string>;
+  confirmKey: string;
+  icon: string;
+}
+
+export interface BlockUiPort {
+  notifyWarn(key: string): void;
+  notifyError(key: string): void;
+  notifyInfo(key: string, format?: Record<string, string>): void;
+  localize(key: string): string;
+  confirm(options: BlockConfirmOptions): Promise<boolean>;
+}
+
+export interface BlockLifecycleDeps {
+  templates: Pick<TemplateRegistry, "get">;
+  renderer: Pick<TemplateRenderer, "render">;
+  pm: StateModule;
+  parseHtml(html: string): PMNode;
+  newInstanceId(): string;
+  ui: BlockUiPort;
+}
+
+export interface BlockLifecycle {
+  read(doc: PMNode, instanceId: string): BlockSnapshot | null;
+  prepareEdit(view: BlockView, instanceId: string): Promise<BlockSnapshot | null>;
+  applyEdit(view: BlockView, instanceId: string, input: BlockEditInput): Promise<boolean>;
+  duplicate(view: BlockView, instanceId: string): boolean;
+  delete(view: BlockView, instanceId: string): boolean;
+  deleteWithConfirmation(view: BlockView, instanceId: string): Promise<boolean>;
+}
+
+export function createBlockLifecycle(deps: BlockLifecycleDeps): BlockLifecycle {
+  const { templates, renderer, pm, parseHtml, newInstanceId, ui } = deps;
+
+  function resolveEditableLocation(view: BlockView, instanceId: string): BlockLocation | null {
+    if (view.isDestroyed || !view.editable) {
+      ui.notifyWarn("LOREFRAME.Error.NoEditor");
+      return null;
+    }
+    const location = locateBlock(view.state.doc, instanceId);
+    if (!location) {
+      ui.notifyWarn("LOREFRAME.Error.BlockMissing");
+      return null;
+    }
+    return location;
+  }
+
+  function snapshotOf(location: BlockLocation): BlockSnapshot | null {
+    const definition = templates.get(location.templateId);
+    if (!definition) return null;
+    return {
+      definition,
+      values: readBlockValues(location.root, definition),
+      preset: getHtmlAttribute(location.root, DATA_ATTR.preset) ?? null,
+      version: blockVersionState(location.root, definition),
+    };
+  }
+
+  function writtenFor(location: BlockLocation, definition: LoreframeTemplateDefinition): string[] {
+    try {
+      const preset = getHtmlAttribute(location.root, DATA_ATTR.preset) ?? null;
+      const html = renderer.render(definition.id, { instanceId: location.instanceId, preset });
+      const fresh = parseHtml(html).firstChild;
+      const freshRoot = fresh && isSecretWrapper(fresh) ? fresh.firstChild : fresh;
+      return freshRoot ? writtenRegions(location.root, freshRoot, definition) : [];
+    } catch (error) {
+      // Without a reference render every written region counts, so the author is still asked.
+      logger.error(`Could not compare block "${location.instanceId}" with its defaults`, error);
+      return [
+        ...(definition.fields ?? []).filter((f) => f.type === "richText").map((f) => f.id),
+        ...(definition.slots ?? []),
+      ];
+    }
+  }
+
+  function containsNestedBlock(root: PMNode): boolean {
+    let found = false;
+    root.descendants((node) => {
+      if (isLoreframeRoot(node)) found = true;
+      return !found;
+    });
+    return found;
+  }
+
+  function formatSectionNames(definition: LoreframeTemplateDefinition, removed: readonly string[]): string {
+    const fields = definition.fields ?? [];
+    return removed
+      .map((id) => {
+        // Toggles carry the section name; slots have no field of their own.
+        const label = (
+          fields.find((field) => field.id === `show-${id}`) ?? fields.find((field) => field.id === id)
+        )?.label;
+        return escapeHtml(label ? ui.localize(label) : id);
+      })
+      .join(", ");
+  }
+
+  return {
+    read(doc, instanceId) {
+      const location = locateBlock(doc, instanceId);
+      return location ? snapshotOf(location) : null;
+    },
+
+    async prepareEdit(view, instanceId) {
+      const location = locateBlock(view.state.doc, instanceId);
+      const initial = location ? snapshotOf(location) : null;
+      if (!initial) {
+        ui.notifyWarn("LOREFRAME.Error.BlockMissing");
+        return null;
+      }
+      if (view.isDestroyed || !view.editable) {
+        ui.notifyWarn("LOREFRAME.Error.NoEditor");
+        return null;
+      }
+      // Blocks of another template version are never rebuilt: their markup would be lost (spec §46, §47).
+      if (initial.version !== "current") {
+        ui.notifyWarn("LOREFRAME.Error.BlockVersion");
+        return null;
+      }
+      return initial;
+    },
+
+    async applyEdit(view, instanceId, { changed, edited, nextPreset }) {
+      if (!Object.keys(changed).length && nextPreset === undefined) return true;
+      let location = resolveEditableLocation(view, instanceId);
+      let definition = location ? templates.get(location.templateId) : undefined;
+      if (!location || !definition) {
+        if (location && !definition) ui.notifyWarn("LOREFRAME.Error.BlockMissing");
+        return false;
+      }
+      if (blockVersionState(location.root, definition) !== "current") {
+        ui.notifyWarn("LOREFRAME.Error.BlockVersion");
+        return false;
+      }
+
+      const currentValues = readBlockValues(location.root, definition);
+      const removed = sectionsToRemove(definition, currentValues, edited, writtenFor(location, definition));
+      if (removed.length) {
+        const confirmed = await ui.confirm({
+          titleKey: "LOREFRAME.Inspector.DropSections.Title",
+          contentKey: "LOREFRAME.Inspector.DropSections.Content",
+          contentFormat: { sections: formatSectionNames(definition, removed) },
+          confirmKey: "LOREFRAME.Inspector.DropSections.Confirm",
+          icon: "fa-solid fa-trash",
+        });
+        if (!confirmed) return false;
+        // Re-locate after the dialog: the author may have edited or removed the block meanwhile.
+        location = resolveEditableLocation(view, instanceId);
+        definition = location ? templates.get(location.templateId) : undefined;
+        if (!location || !definition) {
+          if (location && !definition) ui.notifyWarn("LOREFRAME.Error.BlockMissing");
+          return false;
+        }
+        if (blockVersionState(location.root, definition) !== "current") {
+          ui.notifyWarn("LOREFRAME.Error.BlockVersion");
+          return false;
+        }
+      }
+
+      try {
+        const values = { ...readBlockValues(location.root, definition), ...changed };
+        const preset = nextPreset ?? getHtmlAttribute(location.root, DATA_ATTR.preset) ?? null;
+        const html = renderer.render(definition.id, { instanceId, values, preset });
+        const fresh = parseHtml(html).firstChild;
+        if (!fresh) throw new Error("Rendered block is empty");
+        const tr = rebuildBlockTransaction(view.state, location, fresh, definition, pm);
+        view.dispatch(tr.scrollIntoView());
+        view.focus();
+        const moved = movedOutOfBlock(tr);
+        if (moved) ui.notifyInfo("LOREFRAME.Inspector.MovedOut", { count: String(moved) });
+        return true;
+      } catch (error) {
+        logger.error(`Updating block "${instanceId}" failed`, error);
+        ui.notifyError("LOREFRAME.Error.UpdateFailed");
+        return false;
+      }
+    },
+
+    duplicate(view, instanceId) {
+      const location = resolveEditableLocation(view, instanceId);
+      if (!location) return false;
+      view.dispatch(duplicateBlockTransaction(view.state, location, newInstanceId).scrollIntoView());
+      view.focus();
+      return true;
+    },
+
+    delete(view, instanceId) {
+      const location = resolveEditableLocation(view, instanceId);
+      if (!location) return false;
+      view.dispatch(deleteBlockTransaction(view.state, location, pm).scrollIntoView());
+      view.focus();
+      return true;
+    },
+
+    async deleteWithConfirmation(view, instanceId) {
+      const location = resolveEditableLocation(view, instanceId);
+      if (!location) return false;
+      const definition = templates.get(location.templateId);
+      const worthAsking =
+        !definition ||
+        definition.type !== "block" ||
+        writtenFor(location, definition).length > 0 ||
+        containsNestedBlock(location.root);
+      if (worthAsking) {
+        const name = definition ? ui.localize(definition.name) : instanceId;
+        const confirmed = await ui.confirm({
+          titleKey: "LOREFRAME.Toolbar.DeleteTitle",
+          contentKey: "LOREFRAME.Toolbar.DeleteContent",
+          contentFormat: { name: escapeHtml(name) },
+          confirmKey: "LOREFRAME.Toolbar.Delete",
+          icon: "fa-solid fa-trash",
+        });
+        if (!confirmed) return false;
+      }
+      return this.delete(view, instanceId);
+    },
+  };
 }

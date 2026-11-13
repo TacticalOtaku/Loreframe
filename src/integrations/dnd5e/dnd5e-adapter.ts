@@ -1,4 +1,4 @@
-import { htmlToText, secretText } from "../npc-values";
+import { htmlToText, secretText } from "../html-text";
 import type { LoreframeNpcData, LoreframeSystemAdapter } from "../types";
 
 /**

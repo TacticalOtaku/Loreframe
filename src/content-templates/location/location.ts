@@ -8,7 +8,15 @@ import type {
   TemplateValues,
   TreeElement,
 } from "../../types";
-import { imageField, labelHeading, paragraphs, PLACEHOLDER_IMAGE, secretRegion, text } from "../shared";
+import {
+  imageField,
+  labelHeading,
+  paragraphs,
+  PLACEHOLDER_IMAGE,
+  secretRegion,
+  selectOption,
+  text,
+} from "../shared";
 
 export const LOCATION_RENDERER = "location";
 export const INFO_SIDES = ["right", "left", "full"];
@@ -22,11 +30,6 @@ const pascal = (id: string) => id.replace(/(^|-)([a-z])/g, (_m, _dash, char: str
 const labelKey = (id: string) => `LOREFRAME.Location.${pascal(id)}.Label`;
 const placeholderKey = (id: string) => `LOREFRAME.Location.${pascal(id)}.Placeholder`;
 const shown = (values: TemplateValues, id: string) => values[`show-${id}`] !== false;
-
-function option(values: TemplateValues, id: string, allowed: string[]): string {
-  const value = values[id];
-  return typeof value === "string" && allowed.includes(value) ? value : (allowed[0] ?? "");
-}
 
 const label = (id: string, localize: Localize) =>
   labelHeading("loreframe-location__label", localize(labelKey(id)));
@@ -169,7 +172,10 @@ function map(values: TemplateValues, localize: Localize): TreeElement {
 /** Location page (spec §21): composes hero, info, Foundry links, map, secrets and an embedded Gallery. */
 export const locationRenderer: TemplateRendererFn = ({ values, localize, embed }) => ({
   tag: "article",
-  classes: ["loreframe-location", `loreframe-location--info-${option(values, "info-side", INFO_SIDES)}`],
+  classes: [
+    "loreframe-location",
+    `loreframe-location--info-${selectOption(values, "info-side", INFO_SIDES)}`,
+  ],
   children: [
     hero(values),
     ...(shown(values, "summary")

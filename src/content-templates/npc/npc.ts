@@ -6,7 +6,7 @@ import type {
   TreeElement,
 } from "../../types";
 import { BUILT_IN_PRESET_IDS } from "../presets";
-import { imageField, labelHeading, paragraphs, secretRegion, text } from "../shared";
+import { imageField, labelHeading, paragraphs, secretRegion, selectOption, text } from "../shared";
 
 export const NPC_RENDERER = "npc";
 export const PORTRAIT_POSITIONS = ["left", "right", "top"];
@@ -27,11 +27,6 @@ const pascal = (id: string) => id.replace(/(^|-)([a-z])/g, (_m, _dash, char: str
 const labelKey = (id: string) => `LOREFRAME.Npc.${pascal(id)}.Label`;
 const placeholderKey = (id: string) => `LOREFRAME.Npc.${pascal(id)}.Placeholder`;
 const toggleId = (id: string) => `show-${id}`;
-
-function option(values: TemplateValues, id: string, allowed: string[]): string {
-  const value = values[id];
-  return typeof value === "string" && allowed.includes(value) ? value : (allowed[0] ?? "");
-}
 
 /** Optional sections are on unless explicitly switched off. */
 const shown = (values: TemplateValues, id: string) => values[toggleId(id)] !== false;
@@ -150,8 +145,8 @@ export const npcRenderer: TemplateRendererFn = ({ definition, values, localize }
     classes: [
       "loreframe-npc",
       `loreframe-npc--${variant}`,
-      `loreframe-npc--portrait-${option(values, "portrait", PORTRAIT_POSITIONS)}`,
-      `loreframe-npc--density-${option(values, "density", DENSITIES)}`,
+      `loreframe-npc--portrait-${selectOption(values, "portrait", PORTRAIT_POSITIONS)}`,
+      `loreframe-npc--density-${selectOption(values, "density", DENSITIES)}`,
     ],
     children: [
       header(variant, values),

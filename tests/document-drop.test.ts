@@ -10,8 +10,8 @@ function setup(
   claims: (type: string) => boolean = (type) => type === "Actor",
   data: object = { type: "Actor", uuid: "Actor.a1" },
   selection?: [number, number],
+  onDrop: (view: EditorView, drop: DocumentDrop) => Promise<void> | void = vi.fn(),
 ) {
-  const onDrop = vi.fn();
   const plugin = buildDocumentDropPlugin({ Plugin, getDragData: () => data, claims, onDrop });
   const handleDrop = plugin.props.handleDrop as unknown as DropHandler;
   let state = EditorState.create({ doc: parseString("<p>Hello world</p><p>Second</p>"), plugins: [plugin] });
@@ -38,25 +38,48 @@ describe("document drop plugin", () => {
   it("claims drops of handled document types at the drop position", () => {
     const { onDrop, handleDrop, view, event } = setup();
     expect(handleDrop(view, event, null, false)).toBe(true);
-    const drop = onDrop.mock.calls[0]![1] as DocumentDrop;
+    const drop = (onDrop as ReturnType<typeof vi.fn>).mock.calls[0]![1] as DocumentDrop;
     expect(drop).toMatchObject({ type: "Actor", uuid: "Actor.a1", label: "", selection: null });
     expect(drop.at).toMatchObject({ from: 14, to: 14, deleted: false });
     expect(event.preventDefault).toHaveBeenCalled();
     expect(event.stopPropagation).toHaveBeenCalled();
   });
 
-  it("keeps the drop position and selection current while the author (or a co-author) edits", () => {
-    const { onDrop, handleDrop, view, event } = setup(undefined, undefined, [1, 6]);
+  it("tracks both point drops and selections across edits and auto-releases when onDrop settles", async () => {
+    let finishDrop!: () => void;
+    let captured!: DocumentDrop;
+    const onDrop = vi.fn((_view: EditorView, drop: DocumentDrop) => {
+      captured = drop;
+      return new Promise<void>((resolve) => {
+        finishDrop = resolve;
+      });
+    });
+    const { handleDrop, view, event } = setup(undefined, undefined, [1, 6], onDrop);
+    handleDrop(view, event, null, false);
+    expect(captured.label).toBe("Hello");
+
+    view.dispatch(view.state.tr.insertText("Oh, ", 1));
+    expect(captured.at.from).toBe(18);
+    expect(captured.selection).toMatchObject({ from: 5, to: 10, deleted: false });
+
+    finishDrop();
+    await Promise.resolve();
+    view.dispatch(view.state.tr.insertText("x", 1));
+    // Auto-released once onDrop settled: no longer updated.
+    expect(captured.at.from).toBe(18);
+    expect(captured.selection!.from).toBe(5);
+  });
+
+  it("marks point drops as deleted when surrounding content is removed", () => {
+    const onDrop = vi.fn();
+    const { handleDrop, view, event } = setup(undefined, undefined, [1, 6], onDrop);
     handleDrop(view, event, null, false);
     const drop = onDrop.mock.calls[0]![1] as DocumentDrop;
-    expect(drop.label).toBe("Hello");
-    view.dispatch(view.state.tr.insertText("Oh, ", 1));
-    expect(drop.at.from).toBe(18);
-    expect(drop.selection).toMatchObject({ from: 5, to: 10, deleted: false });
-    drop.at.release();
-    view.dispatch(view.state.tr.insertText("x", 1));
-    expect(drop.at.from).toBe(18);
-    expect(drop.selection!.from).toBe(6);
+
+    // Delete the entire second paragraph spanning pos 14 (drop.at) while selection in first paragraph survives.
+    view.dispatch(view.state.tr.delete(13, view.state.doc.content.size));
+    expect(drop.at.deleted).toBe(true);
+    expect(drop.selection!.deleted).toBe(false);
   });
 
   it("leaves other drops to Foundry", () => {

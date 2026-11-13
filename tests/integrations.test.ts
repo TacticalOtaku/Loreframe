@@ -1,9 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
+import { EditorState } from "prosemirror-state";
 import { IntegrationManager } from "../src/integrations/integration-manager";
-import { htmlToText, npcTemplateValues, secretText } from "../src/integrations/npc-values";
+import { htmlToText, secretText } from "../src/integrations/html-text";
+import {
+  createDocumentDropHandler,
+  npcTemplateValues,
+  type DropUiPort,
+  type DropView,
+} from "../src/integrations/document-drop-flow";
+import type { DocumentDrop } from "../src/editor/document-drop";
 import type { LoreframeNpcData, LoreframeSystemAdapter } from "../src/integrations/types";
 import { locateBlock, readBlockValues } from "../src/editor/block-document";
-import { parseString } from "./helpers/schema";
+import { parseString, serializeString } from "./helpers/schema";
 import { testCore } from "./helpers/core";
 
 const npc: LoreframeNpcData = {
@@ -168,5 +176,143 @@ describe("GM secrets in system HTML (0.1.1)", () => {
   it("can read the secrets on their own, or everything for GM-only destinations", () => {
     expect(secretText(html)).toBe("He is the killer.");
     expect(htmlToText(html, { keepSecrets: true })).toBe("Public face.\n\nHe is the killer.\n\nLikes tea.");
+  });
+});
+
+describe("createDocumentDropHandler", () => {
+  function setupHandler(
+    options: {
+      hasPermission?: boolean;
+      npcData?: LoreframeNpcData | null;
+      choice?: "link" | "npc-card" | "npc-dossier" | null;
+      relativePage?: string;
+      editable?: boolean;
+    } = {},
+  ) {
+    const integrations = new IntegrationManager({ systemId: () => "dnd5e", enabled: () => true });
+    integrations.register(
+      adapter({
+        canHandle: () => true,
+        getNpcData: () => (options.npcData === undefined ? npc : options.npcData),
+      }),
+    );
+    const ui: DropUiPort = {
+      resolveDocument: vi.fn(async (uuid) => ({ name: uuid })),
+      hasObserverPermission: vi.fn(() => options.hasPermission ?? true),
+      chooseInsertion: vi.fn(async () => (options.choice === undefined ? "npc-card" : options.choice)),
+      buildContentLink: vi.fn(async ({ uuid, label }) => `@UUID[${uuid}]{${label ?? "Mira Vell"}}`),
+      localize: (key) => key,
+      format: (key, data) => `${key}:${data.name}`,
+      notifyError: vi.fn(),
+    };
+    const hostEl = {
+      hasAttribute: (name: string) => name === "relative" && Boolean(options.relativePage),
+      dataset: { documentUuid: options.relativePage },
+    };
+    const view = {
+      editable: options.editable ?? true,
+      isDestroyed: false,
+      state: EditorState.create({ doc: parseString("<p>Hello world</p>") }),
+      dom: { closest: () => hostEl as unknown as HTMLElement } as unknown as Pick<HTMLElement, "closest">,
+      dispatch: vi.fn((tr) => {
+        view.state = view.state.apply(tr);
+      }),
+      focus: vi.fn(),
+    } satisfies DropView & { state: EditorState };
+    const insertBlock = vi.fn(() => true);
+    const handler = createDocumentDropHandler({ integrations, insertBlock, ui });
+    return { handler, view, ui, insertBlock };
+  }
+
+  it("remembers the last block choice per handler and passes values & position to insertBlock", async () => {
+    const { handler, view, ui, insertBlock } = setupHandler({ choice: "npc-dossier" });
+    const drop: DocumentDrop = {
+      type: "Actor",
+      uuid: "Actor.a1",
+      at: { from: 6, to: 6, deleted: false },
+      selection: null,
+      label: "",
+    };
+    await handler.handle(view, drop);
+    expect(ui.chooseInsertion).toHaveBeenCalledWith("Mira Vell", "link");
+    expect(insertBlock).toHaveBeenCalledWith(view, "npc-dossier", {
+      at: 6,
+      values: expect.objectContaining({ name: "Mira Vell", "show-secrets": true }),
+    });
+
+    await handler.handle(view, drop);
+    expect(ui.chooseInsertion).toHaveBeenLastCalledWith("Mira Vell", "npc-dossier");
+  });
+
+  it("falls back to inserting a content link when Observer permission is missing", async () => {
+    const { handler, view, ui, insertBlock } = setupHandler({
+      hasPermission: false,
+      relativePage: "JournalEntryPage.p1",
+    });
+    const drop: DocumentDrop = {
+      type: "Actor",
+      uuid: "Actor.a1",
+      at: { from: 6, to: 6, deleted: false },
+      selection: { from: 1, to: 6, deleted: false },
+      label: "Hero",
+    };
+    await handler.handle(view, drop);
+    expect(ui.chooseInsertion).not.toHaveBeenCalled();
+    expect(insertBlock).not.toHaveBeenCalled();
+    expect(ui.buildContentLink).toHaveBeenCalledWith({
+      type: "Actor",
+      uuid: "Actor.a1",
+      relativeTo: { name: "JournalEntryPage.p1" },
+      label: "Hero",
+    });
+    expect(serializeString(view.state.doc)).toContain("@UUID[Actor.a1]{Hero}");
+  });
+
+  it("aborts cleanly when the drop position or selection was deleted or user cancels", async () => {
+    const cancelled = setupHandler({ choice: null });
+    await cancelled.handler.handle(cancelled.view, {
+      type: "Actor",
+      uuid: "Actor.a1",
+      at: { from: 6, to: 6, deleted: false },
+      selection: null,
+      label: "",
+    });
+    expect(cancelled.insertBlock).not.toHaveBeenCalled();
+    expect(cancelled.view.dispatch).not.toHaveBeenCalled();
+
+    const deletedAt = setupHandler({ choice: "npc-card" });
+    await deletedAt.handler.handle(deletedAt.view, {
+      type: "Actor",
+      uuid: "Actor.a1",
+      at: { from: 6, to: 6, deleted: true },
+      selection: null,
+      label: "",
+    });
+    expect(deletedAt.insertBlock).not.toHaveBeenCalled();
+
+    const deletedSelection = setupHandler({ hasPermission: false });
+    await deletedSelection.handler.handle(deletedSelection.view, {
+      type: "Actor",
+      uuid: "Actor.a1",
+      at: { from: 6, to: 6, deleted: true },
+      selection: { from: 1, to: 6, deleted: true },
+      label: "Hero",
+    });
+    expect(deletedSelection.ui.buildContentLink).not.toHaveBeenCalled();
+    expect(deletedSelection.view.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("logs and notifies InsertFailed on unexpected drop errors", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { handler, view, ui } = setupHandler();
+    vi.mocked(ui.chooseInsertion).mockRejectedValueOnce(new Error("dialog crash"));
+    await handler.handle(view, {
+      type: "Actor",
+      uuid: "Actor.a1",
+      at: { from: 6, to: 6, deleted: false },
+      selection: null,
+      label: "",
+    });
+    expect(ui.notifyError).toHaveBeenCalledWith("LOREFRAME.Error.InsertFailed");
   });
 });

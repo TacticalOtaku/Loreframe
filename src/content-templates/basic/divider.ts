@@ -1,12 +1,12 @@
 import type { LoreframeTemplateDefinition, TemplateRendererFn } from "../../types";
+import { selectOption } from "../shared";
 
 export const DIVIDER_RENDERER = "divider";
 const DIVIDER_STYLES = ["ornament", "line"];
 
 /** Section divider. The ornament is drawn by CSS on the wrapper, so the content stays a plain <hr>. */
 export const dividerRenderer: TemplateRendererFn = ({ values }) => {
-  const style =
-    typeof values.style === "string" && DIVIDER_STYLES.includes(values.style) ? values.style : "ornament";
+  const style = selectOption(values, "style", DIVIDER_STYLES);
   return {
     tag: "div",
     classes: ["loreframe-divider", `loreframe-divider--${style}`],

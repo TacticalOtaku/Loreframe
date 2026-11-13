@@ -46,6 +46,11 @@ export class EditorTracker {
     }
     return null;
   }
+
+  /** Return `preferred` while it is still open, attached and editable; otherwise fall back to `active()`. */
+  resolve(preferred?: EditorView | null): EditorView | null {
+    return preferred && isUsable(preferred) ? preferred : this.active();
+  }
 }
 
 function isUsable(view: EditorView): boolean {

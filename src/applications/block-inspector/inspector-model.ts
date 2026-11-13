@@ -32,6 +32,8 @@ export interface InspectorStyle {
   preset: string | null;
   /** Presets the template supports, in display order. */
   presets: readonly LoreframePresetDefinition[];
+  /** Include only configurable fields (select, boolean) and preset, omitting content/image/list fields. */
+  configurableOnly?: boolean;
 }
 
 export interface InspectorSection {
@@ -104,6 +106,7 @@ export function buildInspectorModel(
   }
 
   for (const field of definition.fields ?? []) {
+    if (style.configurableOnly && field.type !== "select" && field.type !== "boolean") continue;
     const value = values[field.id];
     switch (field.type) {
       case "text":
@@ -177,8 +180,9 @@ export function buildInspectorModel(
   return {
     sections,
     lists,
-    richTextHint:
-      (definition.fields ?? []).some((f) => f.type === "richText") || Boolean(definition.slots?.length),
+    richTextHint: style.configurableOnly
+      ? false
+      : (definition.fields ?? []).some((f) => f.type === "richText") || Boolean(definition.slots?.length),
     empty: !sections.length && !lists.length,
   };
 }
@@ -191,6 +195,7 @@ function position(index: number, length: number): ListPosition {
 export function readInspectorForm(
   definition: LoreframeTemplateDefinition,
   form: Readonly<Record<string, unknown>>,
+  options: { configurableOnly?: boolean } = {},
 ): TemplateValues {
   const values: TemplateValues = {};
   const str = (key: string) => {
@@ -198,6 +203,7 @@ export function readInspectorForm(
     return typeof value === "string" ? value.trim() : "";
   };
   for (const field of definition.fields ?? []) {
+    if (options.configurableOnly && field.type !== "select" && field.type !== "boolean") continue;
     switch (field.type) {
       case "text":
       case "image":
@@ -250,20 +256,6 @@ export function readPresetForm(
 ): string | null {
   const value = form[PRESET_FORM_KEY];
   return typeof value === "string" && presets.some((preset) => preset.id === value) ? value : null;
-}
-
-/** Optional sections (`show-<field>` toggles) this edit switches off although the author wrote in them. */
-export function sectionsToRemove(
-  definition: LoreframeTemplateDefinition,
-  original: TemplateValues,
-  edited: TemplateValues,
-  written: readonly string[],
-): string[] {
-  return written.filter((id) => {
-    const toggle = `show-${id}`;
-    const declared = definition.fields?.some((field) => field.id === toggle && field.type === "boolean");
-    return declared && original[toggle] !== false && edited[toggle] === false;
-  });
 }
 
 function sameValue(a: TemplateValue | undefined, b: TemplateValue): boolean {
