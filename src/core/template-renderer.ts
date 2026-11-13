@@ -1,9 +1,8 @@
 import { DATA_ATTR } from "../constants";
-import type { EmbedOptions, TemplateValues, TreeElement } from "../types";
+import type { EmbedOptions, TemplateRendererFn, TemplateValues, TreeElement } from "../types";
 import { serializeTree } from "./element-tree";
 import type { PresetRegistry } from "./preset-registry";
 import { resolveValues } from "./preset-registry";
-import type { RendererRegistry } from "./renderer-registry";
 import type { TemplateRegistry } from "./template-registry";
 
 export const INSTANCE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
@@ -30,7 +29,7 @@ export interface RenderOptions {
 export interface TemplateRendererDeps {
   templates: TemplateRegistry;
   presets: PresetRegistry;
-  renderers: RendererRegistry;
+  getRenderer(id: string): TemplateRendererFn | undefined;
   localize(key: string): string;
 }
 
@@ -49,7 +48,7 @@ export class TemplateRenderer {
   /** The block as an element tree: its root, or a bare Foundry secret around it for GM-only templates. */
   renderTree(templateId: string, options: RenderOptions, depth = 0): TreeElement {
     if (depth > MAX_EMBED_DEPTH) throw new Error(`Template "${templateId}" is nested too deeply`);
-    const { templates, presets, renderers, localize } = this.#deps;
+    const { templates, presets, getRenderer, localize } = this.#deps;
     const definition = templates.get(templateId);
     if (!definition) throw new Error(`Unknown template "${templateId}"`);
     if (!INSTANCE_ID_PATTERN.test(options.instanceId)) {
@@ -63,7 +62,7 @@ export class TemplateRenderer {
     const preset = presetId === null ? null : (presets.get(presetId) ?? null);
     const values: TemplateValues = resolveValues(definition, preset, options.values ?? {}, localize);
 
-    const renderer = renderers.get(definition.renderer);
+    const renderer = getRenderer(definition.renderer);
     if (!renderer) throw new Error(`Renderer "${definition.renderer}" is not available`);
     const embed = (childId: string, embedOptions: EmbedOptions): TreeElement => {
       if (!EMBED_KEY_PATTERN.test(embedOptions.key))

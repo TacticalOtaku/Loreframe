@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.0
+
+### Fixed
+
+- Deleting a template of your own now also removes its identifier from Favorites and Recent preferences.
+- Dropping an Actor cleanly detects when a zero-width drop location was deleted before insertion.
+
+### Changed
+
+- Unified user templates, preferences, system filtering and template editor state inside `TemplateCatalog` (while keeping stored variants whose base is temporarily unavailable).
+- Consolidated template insertion (`createTemplateInserter`) and block lifecycle orchestration (`createBlockLifecycle`) behind explicit Foundry/UI adapters.
+- Consolidated library session state (`createLibrarySession`) and document drop flow (`createDocumentDropHandler`).
+- Simplified `LoreframeCore` public surface (`extraRenderers` option, internal renderer lookup).
+
+### Development
+
+- Migrated and expanded unit tests across catalog, insertion, block lifecycle, library session, inspector model and document drop flow.
+- Replaced `CLAUDE.md` with `AGENTS.md` and added repository agent configuration docs under `docs/agents/`.
+
 ## 0.2.2
 
 ### Fixed

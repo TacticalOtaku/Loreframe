@@ -1,8 +1,13 @@
+import type { EditorView } from "prosemirror-view";
+import type { TemplateCatalog, TemplateEditorRequest } from "../../core/template-catalog";
+import type { EditorTracker } from "../../editor/editor-tracker";
+import type { TemplateInserter } from "../../editor/insert";
 import type {
   LoreframePresetDefinition,
   LoreframeTemplateCategory,
   LoreframeTemplateDefinition,
 } from "../../types";
+import { logger } from "../../utils/logger";
 
 export type LibraryCategoryId = "all" | "favorites" | "recent" | "mine" | LoreframeTemplateCategory;
 
@@ -44,7 +49,7 @@ export interface LibraryCard {
   baseName: string;
 }
 
-/** A user template as the library shows it (see core/user-templates.ts). */
+/** A user template as the library shows it (see core/template-catalog.ts). */
 export interface LibraryUserTemplate {
   id: string;
   name: string;
@@ -238,4 +243,254 @@ export function matchesQuery(searchText: string, query: string): boolean {
 
 function normalize(value: string): string {
   return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
+/* -------------------------------------------- */
+/*  Stateful library session                    */
+/* -------------------------------------------- */
+
+export type LibraryPart = "nav" | "browser" | "preview";
+
+export interface LibrarySnapshot extends LibraryModel {
+  query: string;
+  mineCategory: boolean;
+}
+
+export interface LibraryUiPort {
+  localize(key: string): string;
+  notifyWarn(key: string): void;
+  notifyError(key: string): void;
+  notifyInfo(key: string, format?: Record<string, string>): void;
+  confirmDeleteUserTemplate(name: string): Promise<boolean>;
+  openTemplateEditor(request: TemplateEditorRequest): void;
+  saveJsonFile(content: string, filename: string): void;
+}
+
+export interface LibrarySessionDeps {
+  catalog: Pick<
+    TemplateCatalog,
+    | "availableTemplates"
+    | "availableUserTemplates"
+    | "presetsFor"
+    | "renderPreview"
+    | "favorites"
+    | "recent"
+    | "toggleFavorite"
+    | "listUserTemplates"
+    | "duplicateUserTemplate"
+    | "removeUserTemplate"
+    | "exportUserTemplates"
+    | "importUserTemplates"
+    | "onChange"
+  >;
+  tracker: Pick<EditorTracker, "resolve" | "onChange">;
+  inserter: Pick<TemplateInserter, "insert">;
+  ui: LibraryUiPort;
+}
+
+export interface LibrarySession {
+  readonly state: Readonly<LibraryState>;
+  setTarget(target: EditorView | null): void;
+  snapshot(): LibrarySnapshot;
+  canInsert(): boolean;
+  selectCategory(category: LibraryCategoryId): boolean;
+  selectTemplate(id: string): boolean;
+  setQuery(query: string): { selectedId: string | null };
+  selectPreset(preset: string | null): void;
+  insertSelected(): boolean;
+  toggleFavorite(id: string): Promise<boolean>;
+  customizeSelected(): void;
+  editSelected(): void;
+  duplicateSelected(): Promise<boolean>;
+  deleteSelected(): Promise<boolean>;
+  exportTemplates(selectedOnly: boolean): boolean;
+  importTemplates(readText: () => Promise<string>): Promise<boolean>;
+  connect(onRefresh: (parts: LibraryPart[]) => void): () => void;
+}
+
+export function createLibrarySession(deps: LibrarySessionDeps): LibrarySession {
+  const { catalog, tracker, inserter, ui } = deps;
+  const state: LibraryState = { category: "all", query: "", selectedId: null, preset: null };
+  let target: EditorView | null = null;
+
+  function insertTarget(): EditorView | null {
+    return tracker.resolve(target);
+  }
+
+  function buildCurrentModel(): LibraryModel {
+    return buildLibraryModel({
+      templates: catalog.availableTemplates(),
+      favorites: catalog.favorites(),
+      recent: catalog.recent(),
+      state,
+      localize: ui.localize,
+      renderPreview: (id, preset) => catalog.renderPreview(id, preset),
+      presetsFor: (definition) => catalog.presetsFor(definition),
+      canInsert: insertTarget() !== null,
+      userTemplates: catalog.availableUserTemplates(),
+    });
+  }
+
+  function syncSelection(model: LibraryModel): LibrarySnapshot {
+    return {
+      ...model,
+      query: state.query,
+      mineCategory: state.category === "mine",
+    };
+  }
+
+  return {
+    get state() {
+      return state;
+    },
+
+    setTarget(next) {
+      target = next;
+    },
+
+    snapshot() {
+      return syncSelection(buildCurrentModel());
+    },
+
+    canInsert() {
+      return insertTarget() !== null;
+    },
+
+    selectCategory(category) {
+      if (category === state.category) return false;
+      state.category = category;
+      state.selectedId = null;
+      return true;
+    },
+
+    selectTemplate(id) {
+      const current = buildCurrentModel().selected?.id ?? state.selectedId;
+      if (id === current) return false;
+      state.selectedId = id;
+      return true;
+    },
+
+    setQuery(query) {
+      state.query = query;
+      const selectedId = buildCurrentModel().selected?.id ?? null;
+      state.selectedId = selectedId;
+      return { selectedId };
+    },
+
+    selectPreset(preset) {
+      state.preset = preset;
+    },
+
+    insertSelected() {
+      const model = buildCurrentModel();
+      const selected = model.selected;
+      if (!selected) return false;
+      const view = insertTarget();
+      if (!view) {
+        ui.notifyWarn("LOREFRAME.Error.NoEditor");
+        return false;
+      }
+      const preset = !selected.mine && model.preset ? model.preset : undefined;
+      return inserter.insert(view, selected.id, preset ? { preset } : {});
+    },
+
+    async toggleFavorite(id) {
+      try {
+        await catalog.toggleFavorite(id);
+        return true;
+      } catch (error) {
+        logger.error(`Could not update favorite "${id}"`, error);
+        ui.notifyError("LOREFRAME.Error.PreferencesFailed");
+        return false;
+      }
+    },
+
+    customizeSelected() {
+      const model = buildCurrentModel();
+      const selected = model.selected;
+      if (!selected) return;
+      if (selected.mine) {
+        ui.openTemplateEditor({ mode: "edit", id: selected.id });
+        return;
+      }
+      ui.openTemplateEditor({ mode: "create", base: selected.id, preset: model.preset });
+    },
+
+    editSelected() {
+      const selected = buildCurrentModel().selected;
+      if (selected?.mine) ui.openTemplateEditor({ mode: "edit", id: selected.id });
+    },
+
+    async duplicateSelected() {
+      const selected = buildCurrentModel().selected;
+      if (!selected?.mine) return false;
+      try {
+        const copy = await catalog.duplicateUserTemplate(selected.id);
+        state.selectedId = copy.id;
+        return true;
+      } catch (error) {
+        logger.error("Could not update user templates", error);
+        ui.notifyError("LOREFRAME.UserTemplates.SaveFailed");
+        return false;
+      }
+    },
+
+    async deleteSelected() {
+      const selected = buildCurrentModel().selected;
+      if (!selected?.mine) return false;
+      const confirmed = await ui.confirmDeleteUserTemplate(selected.name);
+      if (!confirmed) return false;
+      try {
+        const removed = await catalog.removeUserTemplate(selected.id);
+        if (removed) state.selectedId = null;
+        return removed;
+      } catch (error) {
+        logger.error("Could not update user templates", error);
+        ui.notifyError("LOREFRAME.UserTemplates.SaveFailed");
+        return false;
+      }
+    },
+
+    exportTemplates(selectedOnly) {
+      const currentId = buildCurrentModel().selected?.id ?? state.selectedId;
+      const ids = selectedOnly && currentId ? [currentId] : undefined;
+      if (!catalog.listUserTemplates().some((template) => !ids || ids.includes(template.id))) {
+        ui.notifyWarn("LOREFRAME.UserTemplates.NothingToExport");
+        return false;
+      }
+      ui.saveJsonFile(catalog.exportUserTemplates(ids), "loreframe-templates.json");
+      return true;
+    },
+
+    async importTemplates(readText) {
+      try {
+        const text = await readText();
+        const result = await catalog.importUserTemplates(text);
+        ui.notifyInfo("LOREFRAME.UserTemplates.Imported", {
+          added: String(result.added),
+          skipped: String(result.skipped),
+        });
+        return true;
+      } catch (error) {
+        logger.warn("Template import rejected", error);
+        ui.notifyError("LOREFRAME.UserTemplates.ImportFailed");
+        return false;
+      }
+    },
+
+    connect(onRefresh) {
+      let lastCanInsert = insertTarget() !== null;
+      const stopCatalog = catalog.onChange(() => onRefresh(["nav", "browser", "preview"]));
+      const stopTracker = tracker.onChange(() => {
+        const next = insertTarget() !== null;
+        if (next === lastCanInsert) return;
+        lastCanInsert = next;
+        onRefresh(["preview"]);
+      });
+      return () => {
+        stopCatalog();
+        stopTracker();
+      };
+    },
+  };
 }

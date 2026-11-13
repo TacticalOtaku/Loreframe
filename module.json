@@ -2,7 +2,7 @@
   "id": "loreframe",
   "title": "Loreframe",
   "description": "Reusable visual blocks, layouts and RPG content templates for the Foundry VTT Journal editor.",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "authors": [
     {
       "name": "TacticalOtaku"
@@ -10,7 +10,7 @@
   ],
   "url": "https://github.com/TacticalOtaku/Loreframe",
   "manifest": "https://raw.githubusercontent.com/TacticalOtaku/Loreframe/main/module.json",
-  "download": "https://github.com/TacticalOtaku/Loreframe/releases/download/v0.2.2/loreframe-v0.2.2.zip",
+  "download": "https://github.com/TacticalOtaku/Loreframe/releases/download/v0.3.0/loreframe-v0.3.0.zip",
   "compatibility": {
     "minimum": "14",
     "verified": "14.367",

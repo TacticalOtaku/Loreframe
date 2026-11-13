@@ -1,4 +1,3 @@
-import type { LoreframeCore } from "../core/loreframe-core";
 import type { LoreframeTemplateDefinition, TemplateRendererFn } from "../types";
 import {
   CALLOUT_RENDERER,
@@ -36,7 +35,6 @@ import { GALLERY_RENDERER, galleryDefinition, galleryRenderer } from "./gallery/
 import { LOCATION_RENDERER, locationDefinition, locationRenderer } from "./location/location";
 import { WIKI_RENDERER, wikiDefinition, wikiRenderer } from "./wiki/wiki";
 import { NPC_RENDERER, npcCardDefinition, npcDossierDefinition, npcRenderer } from "./npc/npc";
-import { BUILT_IN_PRESETS } from "./presets";
 import {
   QUOTE_RENDERER,
   quoteDefinition,
@@ -57,7 +55,9 @@ import {
   heroContentRenderer,
 } from "./layouts/layouts";
 
-const RENDERERS: [string, TemplateRendererFn][] = [
+export { BUILT_IN_PRESETS } from "./presets";
+
+export const BUILT_IN_RENDERERS: readonly [string, TemplateRendererFn][] = [
   [HEADING_RENDERER, headingRenderer],
   [SUBTITLE_RENDERER, subtitleRenderer],
   [DIVIDER_RENDERER, dividerRenderer],
@@ -104,10 +104,3 @@ export const BUILT_IN_TEMPLATES: LoreframeTemplateDefinition[] = [
   locationDefinition,
   wikiDefinition,
 ];
-
-/** Register Loreframe's own renderers, presets and templates (templates validate both). */
-export function registerBuiltIns(core: Pick<LoreframeCore, "renderers" | "presets" | "templates">): void {
-  for (const [id, renderer] of RENDERERS) core.renderers.register(id, renderer);
-  for (const preset of BUILT_IN_PRESETS) core.presets.register(preset);
-  for (const definition of BUILT_IN_TEMPLATES) core.templates.register(definition);
-}

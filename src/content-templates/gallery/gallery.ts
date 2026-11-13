@@ -1,5 +1,5 @@
 import type { GalleryItem, LoreframeTemplateDefinition, TemplateRendererFn, TreeElement } from "../../types";
-import { PLACEHOLDER_IMAGE } from "../shared";
+import { PLACEHOLDER_IMAGE, selectOption } from "../shared";
 
 export const GALLERY_RENDERER = "gallery";
 export const GALLERY_MODES = ["uniform", "portrait", "landscape", "feature", "captioned"] as const;
@@ -14,10 +14,7 @@ function galleryItems(value: unknown): readonly GalleryItem[] | null {
  * Layout modes are CSS only, so switching modes never touches the images.
  */
 export const galleryRenderer: TemplateRendererFn = ({ values, localize }) => {
-  const mode =
-    typeof values.mode === "string" && (GALLERY_MODES as readonly string[]).includes(values.mode)
-      ? values.mode
-      : "uniform";
+  const mode = selectOption(values, "mode", GALLERY_MODES);
   const placeholderAlt = localize("LOREFRAME.Template.Gallery.PlaceholderAlt");
   const items =
     galleryItems(values.items) ??

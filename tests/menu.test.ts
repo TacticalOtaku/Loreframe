@@ -1,19 +1,42 @@
 import { describe, expect, it, vi } from "vitest";
 import type { EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
-import { buildLoreframeDropdown, DROPDOWN_KEY, MENU_SHORTCUT_LIMIT, type MenuDeps } from "../src/editor/menu";
 import { BUILT_IN_TEMPLATES } from "../src/content-templates";
+import { TemplateCatalog, type UserTemplate } from "../src/core/template-catalog";
+import { buildLoreframeDropdown, DROPDOWN_KEY, MENU_SHORTCUT_LIMIT, type MenuDeps } from "../src/editor/menu";
 import { testCore } from "./helpers/core";
 
-function makeDeps(overrides: Partial<MenuDeps> = {}): MenuDeps {
+function makeDeps(
+  overrides: {
+    core?: ReturnType<typeof testCore>;
+    systemId?: string;
+    favorites?: string[];
+    recent?: string[];
+    userTemplates?: UserTemplate[];
+    insert?: MenuDeps["insert"];
+    openLibrary?: MenuDeps["openLibrary"];
+  } = {},
+): MenuDeps {
+  const core = overrides.core ?? testCore();
+  let n = 0;
+  const catalog = new TemplateCatalog({
+    templates: core.templates,
+    presets: core.presets,
+    renderer: core.renderer,
+    systemId: () => overrides.systemId ?? "dnd5e",
+    localize: (key) => key,
+    newId: () => `id${++n}`,
+    storage: {
+      readUserTemplates: () => overrides.userTemplates ?? [],
+      writeUserTemplates: async () => undefined,
+      readPreference: (key) => (key === "favorites" ? (overrides.favorites ?? []) : (overrides.recent ?? [])),
+      writePreference: async () => undefined,
+    },
+  });
   return {
-    templates: testCore().templates,
-    systemId: "dnd5e",
-    favorites: () => [],
-    recent: () => [],
-    insert: vi.fn(() => true),
-    openLibrary: vi.fn(),
-    ...overrides,
+    catalog,
+    insert: overrides.insert ?? vi.fn(() => true),
+    openLibrary: overrides.openLibrary ?? vi.fn(),
   };
 }
 
@@ -66,7 +89,7 @@ describe("buildLoreframeDropdown", () => {
 
   it("shows Favorites and Recent first, in stored order, skipping unknown ids", () => {
     const config = buildLoreframeDropdown(
-      makeDeps({ favorites: () => ["divider", "gone", "note"], recent: () => ["lore"] }),
+      makeDeps({ favorites: ["divider", "gone", "note"], recent: ["lore"] }),
     );
     expect(config.entries.map((e) => [e.action, e.group])).toEqual([
       ["loreframe-group-favorites", 0],
@@ -98,7 +121,7 @@ describe("buildLoreframeDropdown", () => {
         renderer: "divider",
       });
     }
-    const config = buildLoreframeDropdown(makeDeps({ templates: core.templates, recent: () => ids }));
+    const config = buildLoreframeDropdown(makeDeps({ core, recent: ids }));
     expect(find(config, "loreframe-group-recent").children).toHaveLength(MENU_SHORTCUT_LIMIT);
   });
 
@@ -113,7 +136,7 @@ describe("buildLoreframeDropdown", () => {
       renderer: "divider",
       system: "pf2e",
     });
-    const built = buildLoreframeDropdown(makeDeps({ templates: core.templates }));
+    const built = buildLoreframeDropdown(makeDeps({ core }));
     expect(find(built, "loreframe-group-page").children?.map((c) => c.action)).toEqual([
       "loreframe-insert-npc-dossier",
       "loreframe-insert-location",
@@ -122,9 +145,7 @@ describe("buildLoreframeDropdown", () => {
   });
 
   it("uses unique, namespaced actions and localization keys, nested at most two levels", () => {
-    const all = flatten(
-      buildLoreframeDropdown(makeDeps({ favorites: () => ["note"], recent: () => ["note"] })).entries,
-    );
+    const all = flatten(buildLoreframeDropdown(makeDeps({ favorites: ["note"], recent: ["note"] })).entries);
     const actions = all.map(({ entry }) => entry.action);
     expect(new Set(actions).size).toBe(actions.length);
     expect(actions.every((a) => a.startsWith("loreframe-"))).toBe(true);
@@ -133,7 +154,7 @@ describe("buildLoreframeDropdown", () => {
   });
 
   it("inserts through the shared insert function with the menu's editor", () => {
-    const deps = makeDeps({ favorites: () => ["note"] });
+    const deps = makeDeps({ favorites: ["note"] });
     const config = buildLoreframeDropdown(deps);
     expect(find(config, "loreframe-insert-heading").cmd?.(state, undefined, view)).toBe(true);
     find(config, "loreframe-favorite-note").cmd?.(state, undefined, view);
@@ -149,15 +170,25 @@ describe("buildLoreframeDropdown", () => {
   });
 });
 
-describe("buildLoreframeDropdown user templates (0.1.1)", () => {
+describe("buildLoreframeDropdown user templates", () => {
   it("offers My Templates in Favorites and Recent, with their names escaped (Foundry renders titles as HTML)", () => {
     const insert = vi.fn(() => true);
     const config = buildLoreframeDropdown(
       makeDeps({
         insert,
-        favorites: () => ["user-merchant", "note"],
-        recent: () => ["user-merchant", "user-gone"],
-        userTemplates: () => [{ id: "user-merchant", name: "Merchant <b>NPC</b>" }],
+        favorites: ["user-merchant", "note"],
+        recent: ["user-merchant", "user-gone"],
+        userTemplates: [
+          {
+            schemaVersion: 1,
+            id: "user-merchant",
+            name: "Merchant <b>NPC</b>",
+            description: "",
+            base: "note",
+            preset: null,
+            values: {},
+          },
+        ],
       }),
     );
     const favorite = find(config, "loreframe-favorite-user-merchant");

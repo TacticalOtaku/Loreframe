@@ -1,13 +1,12 @@
 import type { Plugin as PMPlugin, Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 
-/** A document range kept current through later edits (local or collaborative) until it is released. */
+/** A document range kept current through later edits (local or collaborative) until the drop settles. */
 export interface TrackedRange {
   from: number;
   to: number;
-  /** The whole range was deleted by an edit. */
+  /** The whole range (or surrounding text for a drop point) was deleted by an edit. */
   deleted: boolean;
-  release(): void;
 }
 
 export interface DocumentDrop {
@@ -26,19 +25,20 @@ export interface DocumentDropDeps {
   getDragData(event: DragEvent): { type?: unknown; uuid?: unknown };
   /** Whether Loreframe offers its own insertion for this document type (an active system adapter handles it). */
   claims(documentType: string): boolean;
-  /** Release the drop's ranges when done. */
-  onDrop(view: EditorView, drop: DocumentDrop): void;
+  /** Handle a claimed drop; tracked ranges stay live until the returned promise settles. */
+  onDrop(view: EditorView, drop: DocumentDrop): Promise<void> | void;
 }
 
 /**
  * Targeted drop handling (spec §35): claims only document drops a system adapter can turn into a block; everything
  * else stays with Foundry's content-link plugin. The work after the claim is asynchronous (dialog, document lookup)
- * and Journal text pages are edited collaboratively, so the drop's positions are mapped through every later change.
+ * and Journal text pages are edited collaboratively, so the drop's positions are mapped through every later change
+ * and released automatically once `onDrop` settles.
  */
 export function buildDocumentDropPlugin(deps: DocumentDropDeps): PMPlugin {
   const tracked = new Set<TrackedRange>();
   const track = (from: number, to: number): TrackedRange => {
-    const range: TrackedRange = { from, to, deleted: false, release: () => tracked.delete(range) };
+    const range: TrackedRange = { from, to, deleted: false };
     tracked.add(range);
     return range;
   };
@@ -46,7 +46,7 @@ export function buildDocumentDropPlugin(deps: DocumentDropDeps): PMPlugin {
     for (const range of tracked) {
       const start = tr.mapping.mapResult(range.from, 1);
       const end = tr.mapping.mapResult(range.to, -1);
-      range.deleted ||= start.deleted && end.deleted && range.from !== range.to;
+      range.deleted ||= start.deleted && end.deleted;
       range.from = start.pos;
       range.to = Math.max(start.pos, end.pos);
     }
@@ -71,13 +71,25 @@ export function buildDocumentDropPlugin(deps: DocumentDropDeps): PMPlugin {
         event.preventDefault();
         event.stopPropagation();
         const { selection, doc } = view.state;
-        deps.onDrop(view, {
+        const at = track(target.pos, target.pos);
+        const sel = selection.empty ? null : track(selection.from, selection.to);
+        const release = () => {
+          tracked.delete(at);
+          if (sel) tracked.delete(sel);
+        };
+        const drop: DocumentDrop = {
           type: data.type,
           uuid: data.uuid,
-          at: track(target.pos, target.pos),
-          selection: selection.empty ? null : track(selection.from, selection.to),
+          at,
+          selection: sel,
           label: selection.empty ? "" : doc.textBetween(selection.from, selection.to, " "),
-        });
+        };
+        try {
+          Promise.resolve(deps.onDrop(view, drop)).then(release, release);
+        } catch (error) {
+          release();
+          throw error;
+        }
         return true;
       },
     },

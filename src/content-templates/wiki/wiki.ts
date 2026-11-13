@@ -9,7 +9,7 @@ import type {
   TreeElement,
 } from "../../types";
 import { DATA_ATTR } from "../../constants";
-import { cell, imageField, labelHeading, paragraphs, text } from "../shared";
+import { cell, imageField, labelHeading, paragraphs, selectOption, text } from "../shared";
 
 export const WIKI_RENDERER = "wiki-article";
 export const INFOBOX_PLACEMENTS = ["right", "left", "full", "hidden"];
@@ -24,11 +24,6 @@ const placeholderKey = (id: string) => `LOREFRAME.Wiki.${pascal(id)}.Placeholder
 const shown = (values: TemplateValues, id: string) => values[`show-${id}`] !== false;
 const label = (id: string, localize: Localize) =>
   labelHeading("loreframe-wiki__label", localize(labelKey(id)));
-
-function option(values: TemplateValues, id: string, allowed: string[]): string {
-  const value = values[id];
-  return typeof value === "string" && allowed.includes(value) ? value : (allowed[0] ?? "");
-}
 
 function header(values: TemplateValues): TreeElement {
   const subtitle = text(values, "subtitle");
@@ -68,7 +63,7 @@ function infobox(values: TemplateValues, localize: Localize): TreeElement {
       },
     ];
   });
-  const hidden = option(values, "infobox", INFOBOX_PLACEMENTS) === "hidden";
+  const hidden = selectOption(values, "infobox", INFOBOX_PLACEMENTS) === "hidden";
   return {
     tag: "aside",
     classes: ["loreframe-wiki__infobox"],
@@ -157,7 +152,10 @@ function related(values: TemplateValues, localize: Localize): TreeElement[] {
 /** Wiki article (spec §19): long-form content framed by an infobox, contents and related entries. */
 export const wikiRenderer: TemplateRendererFn = ({ values, localize }) => ({
   tag: "article",
-  classes: ["loreframe-wiki", `loreframe-wiki--infobox-${option(values, "infobox", INFOBOX_PLACEMENTS)}`],
+  classes: [
+    "loreframe-wiki",
+    `loreframe-wiki--infobox-${selectOption(values, "infobox", INFOBOX_PLACEMENTS)}`,
+  ],
   children: [
     header(values),
     imageField("loreframe-wiki__hero", text(values, "image"), text(values, "alt")),

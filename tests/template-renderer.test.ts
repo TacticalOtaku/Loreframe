@@ -69,9 +69,12 @@ describe("TemplateRenderer", () => {
   });
 
   it("does not let renderers override root semantics", () => {
-    const core = testCore();
-    core.renderers.register("evil", () => ({ tag: "div", attrs: { "data-loreframe-template": "other" } }));
-    core.renderers.register("inline-root", () => ({ tag: "p", children: ["x"] }));
+    const core = testCore({
+      extraRenderers: {
+        evil: () => ({ tag: "div", attrs: { "data-loreframe-template": "other" } }),
+        "inline-root": () => ({ tag: "p", children: ["x"] }),
+      },
+    });
     core.templates.register({
       id: "evil",
       version: 1,
@@ -146,11 +149,15 @@ describe("TemplateRenderer secret templates", () => {
   });
 
   it("gives renderers a localize function", () => {
-    const core = testCore({ localize: (key) => `«${key}»` });
-    core.renderers.register("loc", ({ localize }) => ({
-      tag: "div",
-      children: [{ tag: "p", children: [localize("LOREFRAME.X")] }],
-    }));
+    const core = testCore({
+      localize: (key) => `«${key}»`,
+      extraRenderers: {
+        loc: ({ localize }) => ({
+          tag: "div",
+          children: [{ tag: "p", children: [localize("LOREFRAME.X")] }],
+        }),
+      },
+    });
     core.templates.register({
       id: "loc",
       version: 1,
@@ -176,12 +183,15 @@ describe("TemplateRenderer options", () => {
 
 describe("TemplateRenderer composition", () => {
   function coreWithWrapper(embedded: string, extra: Record<string, unknown> = {}) {
-    const core = testCore();
-    core.renderers.register("wrapper", ({ embed }) => ({
-      tag: "div",
-      classes: ["loreframe-wrapper"],
-      children: [{ tag: "div", slot: "inner", children: [embed(embedded, { key: "inner", ...extra })] }],
-    }));
+    const core = testCore({
+      extraRenderers: {
+        wrapper: ({ embed }) => ({
+          tag: "div",
+          classes: ["loreframe-wrapper"],
+          children: [{ tag: "div", slot: "inner", children: [embed(embedded, { key: "inner", ...extra })] }],
+        }),
+      },
+    });
     core.templates.register({
       id: "wrapper",
       version: 1,
@@ -202,10 +212,11 @@ describe("TemplateRenderer composition", () => {
     expect(inner.getAttribute("data-loreframe-instance")).toBe("outer-inner");
     expect(inner.getAttribute("data-loreframe-opt-mode")).toBe("feature");
     expect(inner.classList).toContain("loreframe-block");
-    expect(core.parse(root.parentNode as DocumentFragment).map((b) => b.templateId)).toEqual([
-      "wrapper",
-      "gallery",
-    ]);
+    expect(
+      [...(root.parentNode as DocumentFragment).querySelectorAll("[data-loreframe-template]")].map((el) =>
+        el.getAttribute("data-loreframe-template"),
+      ),
+    ).toEqual(["wrapper", "gallery"]);
   });
 
   it("wraps embedded GM-only blocks in their own Foundry secret", () => {
@@ -219,8 +230,9 @@ describe("TemplateRenderer composition", () => {
     expect(() => coreWithWrapper("missing").renderer.render("wrapper", { instanceId: "o" })).toThrow(
       /missing/,
     );
-    const badKey = testCore();
-    badKey.renderers.register("bad", ({ embed }) => embed("note", { key: "Bad Key" }));
+    const badKey = testCore({
+      extraRenderers: { bad: ({ embed }) => embed("note", { key: "Bad Key" }) },
+    });
     badKey.templates.register({
       id: "bad",
       version: 1,

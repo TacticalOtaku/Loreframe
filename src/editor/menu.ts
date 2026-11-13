@@ -1,5 +1,5 @@
 import type { EditorView } from "prosemirror-view";
-import type { TemplateRegistry } from "../core/template-registry";
+import type { TemplateCatalog } from "../core/template-catalog";
 import type { LoreframeTemplateDefinition, LoreframeTemplateType } from "../types";
 import { escapeHtml } from "../utils/html";
 
@@ -15,14 +15,13 @@ const TYPE_GROUPS: { type: LoreframeTemplateType; title: string }[] = [
   { type: "page", title: "LOREFRAME.Editor.Structures" },
 ];
 
+export type MenuCatalog = Pick<
+  TemplateCatalog,
+  "availableTemplates" | "availableUserTemplates" | "favorites" | "recent"
+>;
+
 export interface MenuDeps {
-  templates: Pick<TemplateRegistry, "list">;
-  /** Active game system; templates for other systems are hidden. */
-  systemId?: string;
-  favorites(): readonly string[];
-  recent(): readonly string[];
-  /** "My Templates" usable in this world; they can appear in Favorites and Recent. */
-  userTemplates?(): readonly { id: string; name: string }[];
+  catalog: MenuCatalog;
   /** Insert a template or a user template by id. */
   insert(view: EditorView, templateId: string): boolean;
   /** Open the Template Library targeting this editor. */
@@ -37,18 +36,17 @@ interface MenuItem {
 /**
  * Build the single Loreframe editor dropdown (spec §13): Favorites, Recent, template groups, library.
  * Foundry resolves actions across all dropdowns, so every action is prefixed with `loreframe-`.
- * Foundry builds dropdowns once per editor, so shortcut groups reflect preferences at editor creation.
+ * Foundry builds dropdowns once per editor, so shortcut groups reflect catalog state at editor creation.
  */
 export function buildLoreframeDropdown(deps: MenuDeps): ProseMirrorDropDownConfig {
-  const available = deps.templates.list({ systemId: deps.systemId });
+  const available = deps.catalog.availableTemplates();
   // Foundry renders entry titles as HTML (common/prosemirror/dropdown.mjs): user-given names are escaped; template
   // names are localization keys.
   const shortcuts = new Map<string, MenuItem>([
     ...available.map((t): [string, MenuItem] => [t.id, { id: t.id, title: t.name }]),
-    ...(deps.userTemplates?.() ?? []).map((t): [string, MenuItem] => [
-      t.id,
-      { id: t.id, title: escapeHtml(t.name) },
-    ]),
+    ...deps.catalog
+      .availableUserTemplates()
+      .map((t): [string, MenuItem] => [t.id, { id: t.id, title: escapeHtml(t.name) }]),
   ]);
   const pick = (ids: readonly string[]) =>
     ids.flatMap((id) => shortcuts.get(id) ?? []).slice(0, MENU_SHORTCUT_LIMIT);
@@ -84,9 +82,9 @@ export function buildLoreframeDropdown(deps: MenuDeps): ProseMirrorDropDownConfi
         "LOREFRAME.Editor.Favorites",
         0,
         "favorite",
-        pick(deps.favorites()),
+        pick(deps.catalog.favorites()),
       ),
-      ...group("loreframe-group-recent", "LOREFRAME.Editor.Recent", 0, "recent", pick(deps.recent())),
+      ...group("loreframe-group-recent", "LOREFRAME.Editor.Recent", 0, "recent", pick(deps.catalog.recent())),
       ...TYPE_GROUPS.flatMap(({ type, title }) =>
         group(
           `loreframe-group-${type}`,

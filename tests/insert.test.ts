@@ -1,8 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as pmState from "prosemirror-state";
 import { EditorState, TextSelection } from "prosemirror-state";
 import type { Node as PMNode } from "prosemirror-model";
-import { insertBlockTransaction } from "../src/editor/insert";
+import { TemplateCatalog, type UserTemplate } from "../src/core/template-catalog";
+import {
+  createTemplateInserter,
+  insertBlockTransaction,
+  type InsertTarget,
+  type TemplateInserterDeps,
+} from "../src/editor/insert";
 import { parseString, serializeString } from "./helpers/schema";
 import { testCore } from "./helpers/core";
 
@@ -217,5 +223,161 @@ describe("insertBlockTransaction with GM-only blocks", () => {
     const next = state.apply(insertBlockTransaction(state, wrapped, pmState, { focusField: "body" }));
     expect(next.selection.$from.parent.textContent).toBe("Hidden body");
     expect(topLevel(next)).toEqual(["paragraph:Text", "secret:GMHidden body", "paragraph"]);
+  });
+});
+
+describe("createTemplateInserter", () => {
+  const userMerchant: UserTemplate = {
+    schemaVersion: 1,
+    id: "user-merchant",
+    name: "Merchant",
+    description: "Shop",
+    base: "npc-card",
+    preset: "arcane",
+    values: { "show-notes": true, portrait: "right" },
+  };
+
+  function makeView(html = "<p>Hello</p>", editable = true, destroyed = false) {
+    const doc = parseString(html);
+    const view = {
+      editable,
+      isDestroyed: destroyed,
+      state: EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, html === "<p>Hello</p>" ? 6 : 1),
+      }),
+      dispatch: vi.fn((tr: pmState.Transaction) => {
+        view.state = view.state.apply(tr);
+      }),
+      focus: vi.fn(),
+    } satisfies InsertTarget;
+    return view;
+  }
+
+  function makeSetup(
+    overrides: Partial<TemplateInserterDeps> & {
+      userTemplates?: UserTemplate[];
+      recordUse?: TemplateCatalog["recordUse"];
+    } = {},
+  ) {
+    const instanceCore = testCore();
+    const prefState: Record<string, string[]> = { favorites: [], recent: [] };
+    const catalog = new TemplateCatalog({
+      templates: instanceCore.templates,
+      presets: instanceCore.presets,
+      renderer: instanceCore.renderer,
+      systemId: () => "dnd5e",
+      localize: (key) => key.split(".").at(-2) ?? key,
+      newId: () => "n1",
+      storage: {
+        readUserTemplates: () => overrides.userTemplates ?? [userMerchant],
+        writeUserTemplates: async () => undefined,
+        readPreference: (k) => prefState[k] ?? [],
+        writePreference: async (k, v) => {
+          prefState[k] = v;
+        },
+      },
+    });
+    if (overrides.recordUse) {
+      vi.spyOn(catalog, "recordUse").mockImplementation(overrides.recordUse);
+    } else {
+      vi.spyOn(catalog, "recordUse");
+    }
+    const renderNew = vi.fn(
+      overrides.renderNew ??
+        ((id, opts) =>
+          instanceCore.renderNew(id, {
+            ...opts,
+            values: { title: "Title", subtitle: "Sub", ...opts?.values },
+          })),
+    );
+    const notifyError = vi.fn();
+    const inserter = createTemplateInserter({
+      catalog,
+      renderNew,
+      parseHtml: parseString,
+      pm: pmState,
+      notifyError,
+      ...overrides,
+    });
+    return { inserter, catalog, renderNew, notifyError, prefState };
+  }
+
+  it("inserts, focuses the editor, selects the focus field and records recent use in one dispatch", () => {
+    const view = makeView();
+    const { inserter, catalog } = makeSetup();
+    expect(inserter.insert(view, "heading")).toBe(true);
+    expect(view.dispatch).toHaveBeenCalledTimes(1);
+    expect(serializeString(view.state.doc)).toContain('data-loreframe-template="heading"');
+    expect(view.state.selection.$from.parent.textContent).toBe("Title");
+    expect(view.focus).toHaveBeenCalled();
+    expect(catalog.recordUse).toHaveBeenCalledWith("heading");
+  });
+
+  it("expands user templates to their base definition and records recent use under the user template id", () => {
+    const view = makeView();
+    const { inserter, catalog } = makeSetup();
+    expect(inserter.insert(view, "user-merchant")).toBe(true);
+    const html = serializeString(view.state.doc);
+    expect(html).toContain('data-loreframe-template="npc-card"');
+    expect(html).toContain('data-loreframe-preset="arcane"');
+    expect(html).toContain('data-loreframe-opt-portrait="right"');
+    expect(catalog.recordUse).toHaveBeenCalledWith("user-merchant");
+  });
+
+  it("refuses read-only or destroyed editors without recording use", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    for (const view of [makeView("<p>Hello</p>", false, false), makeView("<p>Hello</p>", true, true)]) {
+      const { inserter, catalog, notifyError } = makeSetup();
+      expect(inserter.insert(view, "note")).toBe(false);
+      expect(view.dispatch).not.toHaveBeenCalled();
+      expect(catalog.recordUse).not.toHaveBeenCalled();
+      expect(notifyError).toHaveBeenCalledWith("LOREFRAME.Error.NoEditor");
+    }
+  });
+
+  it("strictly validates explicit presets and unknown templates, notifying InsertFailed", () => {
+    const view = makeView();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { inserter, catalog, notifyError } = makeSetup();
+
+    expect(inserter.insert(view, "heading", { preset: "arcane" })).toBe(false);
+    expect(notifyError).toHaveBeenLastCalledWith("LOREFRAME.Error.InsertFailed");
+    expect(catalog.recordUse).not.toHaveBeenCalled();
+
+    expect(inserter.insert(view, "non-existent")).toBe(false);
+    expect(notifyError).toHaveBeenLastCalledWith("LOREFRAME.Error.InsertFailed");
+    expect(catalog.recordUse).not.toHaveBeenCalled();
+  });
+
+  it("logs a failure to store recent use without failing the insert", async () => {
+    const view = makeView();
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { inserter } = makeSetup({ recordUse: () => Promise.reject(new Error("storage")) });
+    expect(inserter.insert(view, "note")).toBe(true);
+    await vi.waitFor(() => expect(error).toHaveBeenCalled());
+  });
+
+  it("inserts at the given position with values and preset in a single dispatch and clamps out-of-bounds", () => {
+    const view = makeView("<p>First</p><p>Second</p>");
+    const { inserter, renderNew } = makeSetup();
+    const ok = inserter.insert(view, "npc-card", {
+      at: 14,
+      values: { name: "Mira" },
+      preset: "arcane",
+    });
+    expect(ok).toBe(true);
+    expect(view.dispatch).toHaveBeenCalledTimes(1);
+    expect(renderNew).toHaveBeenCalledWith("npc-card", { values: { name: "Mira" }, preset: "arcane" });
+    const html = serializeString(view.state.doc);
+    expect(html.indexOf("Second")).toBeLessThan(html.indexOf("npc-card"));
+    expect(html).toContain('data-loreframe-preset="arcane"');
+    expect(html).toContain(">Mira</h3>");
+
+    const clampView = makeView("<p>Hello</p>");
+    const clampSetup = makeSetup();
+    expect(clampSetup.inserter.insert(clampView, "divider", { at: 999 })).toBe(true);
+    expect(clampView.dispatch).toHaveBeenCalledTimes(1);
+    expect(serializeString(clampView.state.doc)).toMatch(/^<p>Hello<\/p><div/);
   });
 });

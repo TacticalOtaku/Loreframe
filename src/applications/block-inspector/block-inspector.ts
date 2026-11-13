@@ -1,11 +1,10 @@
 import type { EditorView } from "prosemirror-view";
 import { MODULE_ID } from "../../constants";
-import { configurableFields } from "../../core/user-templates";
-import { openTemplateEditor } from "../template-editor/template-editor";
-import type { BlockSnapshot, LoreframeRuntime } from "../../runtime";
+import { configurableFields, type TemplateCatalog } from "../../core/template-catalog";
+import type { BlockLifecycle, BlockSnapshot } from "../../editor/block-document";
 import type { GalleryItem, LinkItem, TemplateValue, TemplateValues } from "../../types";
-import { escapeHtml } from "../../utils/html";
 import { logger } from "../../utils/logger";
+import { openTemplateEditor } from "../template-editor/template-editor";
 import {
   addItems,
   addLinks,
@@ -15,7 +14,6 @@ import {
   readInspectorForm,
   readPresetForm,
   removeItem,
-  sectionsToRemove,
 } from "./inspector-model";
 
 const TEMPLATE_DIR = `modules/${MODULE_ID}/templates/applications`;
@@ -23,8 +21,13 @@ const TEMPLATE_DIR = `modules/${MODULE_ID}/templates/applications`;
 type ListEntry = GalleryItem | LinkItem;
 const emptyLink = { uuid: "", label: "" };
 
+export interface BlockInspectorDeps {
+  blocks: Pick<BlockLifecycle, "prepareEdit" | "applyEdit">;
+  catalog: Pick<TemplateCatalog, "presetsFor" | "prepareEditor" | "saveEditor">;
+}
+
 interface InspectorTarget extends BlockSnapshot {
-  runtime: LoreframeRuntime;
+  deps: BlockInspectorDeps;
   view: EditorView;
   instanceId: string;
   /** Window key: editor + block (see inspectorKey). */
@@ -52,7 +55,7 @@ function inspectorKey(view: EditorView, instanceId: string): string {
 
 /** Open the inspector for one block (spec §24), or bring its existing window forward. */
 export async function openBlockInspector(
-  runtime: LoreframeRuntime,
+  deps: BlockInspectorDeps,
   view: EditorView,
   instanceId: string,
 ): Promise<void> {
@@ -62,18 +65,10 @@ export async function openBlockInspector(
     existing.bringToFront();
     return;
   }
-  const block = runtime.readBlock(view, instanceId);
-  if (!block) {
-    ui.notifications.warn("LOREFRAME.Error.BlockMissing", { localize: true });
-    return;
-  }
-  // Blocks of another template version are never rebuilt: their markup would be lost (spec §46, §47).
-  if (block.version !== "current") {
-    ui.notifications.warn("LOREFRAME.Error.BlockVersion", { localize: true });
-    return;
-  }
+  const block = await deps.blocks.prepareEdit(view, instanceId);
+  if (!block) return;
   inspectorClass ??= defineBlockInspector();
-  const app = new inspectorClass({ runtime, view, instanceId, key, ...block });
+  const app = new inspectorClass({ deps, view, instanceId, key, ...block });
   open.set(key, app);
   await app.render({ force: true, position: besideEditor(view) });
 }
@@ -105,7 +100,7 @@ function defineBlockInspector() {
       tag: "form",
       window: { icon: "fa-solid fa-sliders", resizable: true, contentClasses: ["standard-form"] },
       position: { width: INSPECTOR_WIDTH, height: "auto" },
-      // Closed by the handler itself: the author may cancel a confirmation and keep editing.
+      // Closed by the handler itself: the author may cancel a confirmation or fail saving and keep editing.
       form: { handler: submit, closeOnSubmit: false, submitOnChange: false },
       actions: {
         addItem: action((app, target) => app.#addImage(listOf(target))),
@@ -154,7 +149,7 @@ function defineBlockInspector() {
     }
 
     get #presets() {
-      return this.#target.runtime.presetsFor(this.#target.definition);
+      return this.#target.deps.catalog.presetsFor(this.#target.definition);
     }
 
     override async _prepareContext(): Promise<object> {
@@ -194,22 +189,14 @@ function defineBlockInspector() {
       return super.close(options);
     }
 
-    /** Called by the form handler. Resolves false when the author cancelled or the update failed, so the window stays open. */
+    /** Called by the form handler. Resolves false when cancelled or update fails, so the window stays open. */
     async apply(formValues: Record<string, unknown>): Promise<boolean> {
-      const { runtime, view, instanceId, definition } = this.#target;
+      const { deps, view, instanceId, definition } = this.#target;
       const edited = readInspectorForm(definition, formValues);
       const changed = changedValues(this.#target.values, edited);
       const chosen = readPresetForm(formValues, this.#presets);
-      const preset = chosen !== null && chosen !== this.#target.preset ? chosen : undefined;
-      if (!Object.keys(changed).length && preset === undefined) return true;
-
-      // Compare with the block as it is now: the author may have written in it while the inspector was open.
-      const current = runtime.readBlock(view, instanceId)?.values ?? this.#target.values;
-      const removed = sectionsToRemove(definition, current, edited, runtime.writtenFields(view, instanceId));
-      if (removed.length && !(await confirmRemoval(definition.fields ?? [], removed))) return false;
-
-      // Keep the window (and the typed values) when the block could not be rebuilt; updateBlock already notified.
-      return runtime.updateBlock(view, instanceId, changed, preset);
+      const nextPreset = chosen !== null && chosen !== this.#target.preset ? chosen : undefined;
+      return deps.blocks.applyEdit(view, instanceId, { changed, edited, nextPreset });
     }
 
     #readForm(): void {
@@ -223,13 +210,16 @@ function defineBlockInspector() {
     /** Keep the current section, option and preset choices as a "My Template" (spec §32). */
     #saveAsTemplate(): void {
       this.#readForm();
-      const { runtime, definition } = this.#target;
-      openTemplateEditor(runtime, {
-        mode: "create",
-        base: definition.id,
-        preset: this.#preset,
-        values: this.#values,
-      });
+      const { deps, definition } = this.#target;
+      openTemplateEditor(
+        { catalog: deps.catalog },
+        {
+          mode: "create",
+          base: definition.id,
+          preset: this.#preset,
+          values: this.#values,
+        },
+      );
     }
 
     /** Apply a change to one list field (images or links), keeping everything typed so far. */
@@ -284,35 +274,6 @@ function defineBlockInspector() {
     formData: { object: Record<string, unknown> },
   ) {
     if (await (this as BlockInspector).apply(formData.object)) await this.close();
-  }
-
-  /** Ask before an edit removes sections that contain the author's text. "No" is the default button. */
-  async function confirmRemoval(
-    fields: NonNullable<BlockSnapshot["definition"]["fields"]>,
-    removed: string[],
-  ): Promise<boolean> {
-    const names = removed.map((id) => {
-      // Toggles carry the section name; slots have no field of their own.
-      const label = (
-        fields.find((field) => field.id === `show-${id}`) ?? fields.find((field) => field.id === id)
-      )?.label;
-      return escapeHtml(label ? game.i18n.localize(label) : id);
-    });
-    const confirmed = await foundry.applications.api.DialogV2.confirm({
-      window: {
-        title: game.i18n.localize("LOREFRAME.Inspector.DropSections.Title"),
-        icon: "fa-solid fa-trash",
-      },
-      content: `<p>${game.i18n.format("LOREFRAME.Inspector.DropSections.Content", {
-        sections: names.join(", "),
-      })}</p>`,
-      modal: true,
-      yes: {
-        label: game.i18n.localize("LOREFRAME.Inspector.DropSections.Confirm"),
-        icon: "fa-solid fa-trash",
-      },
-    });
-    return confirmed === true;
   }
 
   function listOf(target: HTMLElement): string {

@@ -118,14 +118,3 @@ export interface RenderContext {
 export type TemplateRendererFn = (context: RenderContext) => TreeElement;
 
 export type BlockStatus = "current" | "outdated" | "newer" | "unknown" | "invalid";
-
-export interface ParsedBlock {
-  element: Element;
-  templateId: string;
-  version: number | null;
-  instanceId: string | null;
-  preset: string | null;
-  status: BlockStatus;
-  /** Field elements that belong to this block (not to nested blocks). */
-  fields: Map<string, Element>;
-}

@@ -1,19 +1,17 @@
 import "../styles/loreframe.scss";
 import { createApi, type LoreframeApi } from "./api";
+import { openBlockInspector } from "./applications/block-inspector/block-inspector";
 import { openTemplateLibrary } from "./applications/template-library/template-library";
 import { MODULE_ID } from "./constants";
 import { newInstanceId } from "./core/instance-id";
 import { registerSettings } from "./core/settings";
-import { deleteBlockWithConfirmation } from "./applications/block-actions";
-import { openBlockInspector } from "./applications/block-inspector/block-inspector";
 import { buildBlockIntegrityPlugin } from "./editor/block-integrity-plugin";
 import { buildBlockToolbarPlugin } from "./editor/block-toolbar";
-import { isChatEditor } from "./editor/editor-kind";
 import { buildDocumentDropPlugin, prependPlugin } from "./editor/document-drop";
+import { isChatEditor } from "./editor/editor-kind";
 import { buildEditorTrackerPlugin } from "./editor/editor-tracker";
-import { registerDnd5eIntegration } from "./integrations/dnd5e";
-import { handleDocumentDrop } from "./integrations/document-drop-flow";
 import { buildLoreframeDropdown, DROPDOWN_KEY } from "./editor/menu";
+import { createDnd5eAdapter } from "./integrations/dnd5e/dnd5e-adapter";
 import { createRuntime, type LoreframeRuntime } from "./runtime";
 import { logger } from "./utils/logger";
 import { enhanceArticleContents } from "./view/article-contents";
@@ -25,18 +23,33 @@ Hooks.once("init", () => {
   registerSettings();
   runtime = createRuntime();
 
+  const libraryDeps = {
+    catalog: runtime.catalog,
+    tracker: runtime.tracker,
+    inserter: runtime.inserter,
+  };
+  const inspectorDeps = {
+    blocks: runtime.blocks,
+    catalog: runtime.catalog,
+  };
+
   const module = game.modules.get(MODULE_ID);
   api = createApi({
     core: runtime.core,
     version: module?.version ?? "0.0.0",
-    openLibrary: () => openTemplateLibrary(runtime),
+    openLibrary: () => openTemplateLibrary(libraryDeps),
     activeEditor: () => runtime.tracker.active(),
-    insert: (view, templateId, options) => runtime.insert(view, templateId, options),
+    insert: (view, templateId, options) => runtime.inserter.insert(view, templateId, options),
     integrations: runtime.integrations,
   });
 
   // Built-in adapters; the integration manager ignores those of other game systems.
-  registerDnd5eIntegration(runtime.integrations, (key, data) => game.i18n.format(key, data));
+  runtime.integrations.register(
+    createDnd5eAdapter({
+      formatCR: (cr) => globalThis.dnd5e?.utils?.formatCR?.(cr) ?? String(cr),
+      format: (key, data) => game.i18n.format(key, data),
+    }),
+  );
 
   if (module) module.api = api;
   else logger.error("Module entry missing from game.modules; API not exposed");
@@ -46,13 +59,9 @@ Hooks.once("init", () => {
     "getProseMirrorMenuDropDowns",
     (_menu: ProseMirrorMenuLike, menus: Record<string, ProseMirrorDropDownConfig>) => {
       menus[DROPDOWN_KEY] = buildLoreframeDropdown({
-        templates: runtime.core.templates,
-        systemId: game.system.id,
-        favorites: () => runtime.preferences.favorites(),
-        recent: () => runtime.preferences.recent(),
-        userTemplates: () => runtime.libraryUserTemplates(),
-        insert: (view, id) => runtime.insertEntry(view, id),
-        openLibrary: (view) => openTemplateLibrary(runtime, view),
+        catalog: runtime.catalog,
+        insert: (view, id) => runtime.inserter.insert(view, id),
+        openLibrary: (view) => openTemplateLibrary(libraryDeps, view),
       });
     },
   );
@@ -69,12 +78,7 @@ Hooks.once("init", () => {
         Plugin: ProseMirror.state.Plugin,
         getDragData: (event) => foundry.applications.ux.TextEditor.implementation.getDragEventData(event),
         claims: (type) => runtime.integrations.handles(type),
-        onDrop: (view, drop) => {
-          handleDocumentDrop(runtime, view, drop).catch((error: unknown) => {
-            logger.error("Document drop failed", error);
-            ui.notifications.error("LOREFRAME.Error.InsertFailed", { localize: true });
-          });
-        },
+        onDrop: (view, drop) => runtime.dropHandler.handle(view, drop),
       }),
     );
     plugins.loreframeBlockIntegrity = buildBlockIntegrityPlugin({
@@ -93,15 +97,15 @@ Hooks.once("init", () => {
         return definition ? game.i18n.localize(definition.name) : null;
       },
       onEdit: (view, instanceId) => {
-        openBlockInspector(runtime, view, instanceId).catch((error: unknown) =>
+        openBlockInspector(inspectorDeps, view, instanceId).catch((error: unknown) =>
           logger.error(`Could not open the inspector for "${instanceId}"`, error),
         );
       },
-      onDuplicate: (view, instanceId) => runtime.duplicateBlock(view, instanceId),
+      onDuplicate: (view, instanceId) => runtime.blocks.duplicate(view, instanceId),
       onDelete: (view, instanceId) => {
-        deleteBlockWithConfirmation(runtime, view, instanceId).catch((error: unknown) =>
-          logger.error(`Could not delete block "${instanceId}"`, error),
-        );
+        runtime.blocks
+          .deleteWithConfirmation(view, instanceId)
+          .catch((error: unknown) => logger.error(`Could not delete block "${instanceId}"`, error));
       },
     });
   });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sectionsToRemove } from "../src/editor/block-document";
 import {
   addItems,
   buildInspectorModel,
@@ -8,7 +9,6 @@ import {
   addLinks,
   readPresetForm,
   removeItem,
-  sectionsToRemove,
 } from "../src/applications/block-inspector/inspector-model";
 import { testCore } from "./helpers/core";
 
@@ -55,6 +55,33 @@ describe("buildInspectorModel", () => {
       [0, "a.webp", "a.webp", true, false],
       [1, "", "modules/loreframe/assets/placeholders/image.svg", false, true],
     ]);
+  });
+
+  it("can filter down to configurable fields only (for Template Editor)", () => {
+    const dossier = def("npc-dossier");
+    const model = buildInspectorModel(
+      dossier,
+      { portrait: "left", density: "comfortable", "show-rumours": true },
+      { preset: "minimal", presets: core.presets.listFor(dossier), configurableOnly: true },
+    );
+    expect(model.sections.map((s) => s.id)).toEqual(["sections", "style"]);
+    expect(model.lists).toEqual([]);
+    expect(model.richTextHint).toBe(false);
+    expect(model.sections[1]!.fields.map((f) => [f.id, f.value])).toEqual([
+      ["_preset", "minimal"],
+      ["portrait", "left"],
+      ["density", "comfortable"],
+    ]);
+    expect(
+      readInspectorForm(
+        dossier,
+        { portrait: "right", density: "compact", name: "Ignored Name", "show-rumours": true },
+        { configurableOnly: true },
+      ),
+    ).toMatchObject({ portrait: "right", density: "compact", "show-rumours": true });
+    expect(
+      readInspectorForm(dossier, { name: "Ignored Name" }, { configurableOnly: true }),
+    ).not.toHaveProperty("name");
   });
 
   it("reports that a template has nothing to configure", () => {

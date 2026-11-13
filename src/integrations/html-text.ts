@@ -1,12 +1,3 @@
-import { formatLink } from "../core/links";
-import type { TemplateValues } from "../types";
-import type { LoreframeNpcData } from "./types";
-
-export interface NpcValueDeps {
-  localize(key: string): string;
-  format(key: string, data: Record<string, string>): string;
-}
-
 const BLOCK_TAGS = new Set([
   "P",
   "DIV",
@@ -89,65 +80,4 @@ function fragmentText(root: ParentNode): string {
 
 function normalize(text: string): string {
   return text.replace(/\s+/g, " ").trim();
-}
-
-const DOSSIER_SECTIONS = ["appearance", "personality", "motivation", "relationships", "fears"] as const;
-const DOSSIER_EMPTY = ["voice", "goals", "knowledge", "rumours"];
-
-/**
- * Template values for a snapshot of `npc` (spec §35). Missing data is an empty value, never placeholder text; GM-only
- * text is only used where the template renders it inside a Foundry secret.
- */
-export function npcTemplateValues(
-  npc: LoreframeNpcData,
-  templateId: string,
-  deps: NpcValueDeps,
-): TemplateValues {
-  const link = formatLink({ uuid: npc.uuid, label: npc.name });
-  const common: TemplateValues = {
-    name: npc.name,
-    image: npc.image,
-    alt: deps.format("LOREFRAME.Integration.PortraitAlt", { name: npc.name }),
-    ancestry: npc.ancestry,
-    occupation: npc.occupation,
-  };
-  switch (templateId) {
-    case "npc-card":
-      return {
-        ...common,
-        summary: npc.summary,
-        personality: firstSentence(npc.personality),
-        goal: firstSentence(npc.motivation),
-        location: "",
-        notes: link,
-      };
-    case "npc-dossier": {
-      const values: TemplateValues = {
-        ...common,
-        role: npc.role,
-        summary: [npc.summary, link].filter(Boolean).join("\n\n"),
-        secrets: npc.secrets,
-        "show-summary": true,
-        "show-secrets": npc.secrets !== "",
-      };
-      for (const field of DOSSIER_SECTIONS) {
-        values[field] = npc[field];
-        values[`show-${field}`] = npc[field] !== "";
-      }
-      for (const field of DOSSIER_EMPTY) {
-        values[field] = "";
-        values[`show-${field}`] = false;
-      }
-      return values;
-    }
-    default:
-      throw new Error(`Template "${templateId}" cannot be filled from NPC data`);
-  }
-}
-
-/** Card facts are one line: keep the first sentence of longer text. */
-function firstSentence(text: string): string {
-  const line = text.split("\n")[0] ?? "";
-  const match = /^(.+?[.!?])(\s|$)/.exec(line);
-  return (match?.[1] ?? line).trim();
 }
