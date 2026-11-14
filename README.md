@@ -1,101 +1,145 @@
+<div align="center">
+
 # Loreframe
 
-Reusable visual blocks, layouts and RPG content templates for the **Foundry VTT 14** Journal editor.
+**Reusable visual blocks, responsive layouts and RPG content templates for the Foundry VTT 14 Journal editor.**
 
-Loreframe adds a single **Loreframe** menu to the standard Journal (ProseMirror) editor and a **Template Library**
-window. Blocks are ordinary, readable HTML stored in your Journal pages: you keep writing normal text and using
-normal Foundry links, and if Loreframe is disabled your content stays readable.
+[![Foundry VTT](https://img.shields.io/badge/Foundry%20VTT-v14.367-c76b2c?style=flat-square)](https://foundryvtt.com/)
+[![System](https://img.shields.io/badge/dnd5e-5.3.3%20optional-7c4d2b?style=flat-square)](https://github.com/foundryvtt/dnd5e)
+[![Release](https://img.shields.io/github/v/release/TacticalOtaku/Loreframe?style=flat-square&color=4a6b53)](https://github.com/TacticalOtaku/Loreframe/releases)
+[![Languages](https://img.shields.io/badge/Languages-EN%20%7C%20RU-3b5978?style=flat-square)](#)
+[![License](https://img.shields.io/badge/License-MIT-555555?style=flat-square)](LICENSE)
 
-- **Verified:** Foundry VTT 14.367. dnd5e 5.3.3 integration is optional.
-- **Languages:** English, Русский.
+[Installation](#installation) · [Built-in Library](#built-in-library) · [Workflow](#using-loreframe) · [Developer API](#for-module-developers) · [Development](#development)
+
+</div>
+
+---
+
+Loreframe extends the standard **Foundry VTT 14** ProseMirror Journal editor instead of replacing it. It adds a single **Loreframe** dropdown menu and a searchable **Template Library** window with live previews. Every block saves as ordinary, semantic HTML right inside your Journal page — you keep writing rich text and using native Foundry links, and your notes remain clean and readable even if Loreframe is ever disabled.
+
+### Highlights
+
+- **Just plain HTML** — Blocks store structure in `data-loreframe-*` attributes inside native tags (`aside`, `section`, `div`, headings, paragraphs). No proprietary page format or runtime lock-in.
+- **Write directly in the page** — Prose text and nested content live directly in ProseMirror with full undo/redo (`Ctrl+Z`). Rebuilding a block in the inspector preserves your writing and nested slots.
+- **Built-in presets & theme awareness** — Styled for both Foundry's light and dark themes (`.theme-light` / `.theme-dark`), with four visual presets: **Editorial**, **Minimal**, **Arcane**, and **Bestiary**.
+- **Safe GM secrets** — Private notes and GM Secrets sections compile to native Foundry `<section class="secret">` blocks, stripped for players until you reveal them.
+- **Drop-in `dnd5e` snapshots** — Dragging an Actor into a Journal page lets you insert a standard Foundry link or an instant **NPC Card** / **NPC Dossier** snapshot.
+
+---
+
+## Installation
+
+Install directly from Foundry VTT's **Add-on Modules** browser using the manifest URL:
+
+```text
+https://raw.githubusercontent.com/TacticalOtaku/Loreframe/main/module.json
+```
+
+1. Open Foundry VTT Setup → **Add-on Modules** → **Install Module**.
+2. Paste the **Manifest URL** above and click **Install**.
+3. Launch your world and enable **Loreframe** under **Manage Modules**.
+
+> [!NOTE]
+> Tested on **Foundry VTT 14.367**. Includes full **English** and **Русский** localization. `dnd5e` **5.3.3** integration works out of the box when the system is active and can be disabled in world settings.
+
+---
+
+## Built-in Library
+
+Loreframe ships with **29 built-in templates** and **4 visual presets** (`Editorial`, `Minimal`, `Arcane`, `Bestiary`), excluded automatically from chat editors so only Journal pages receive Loreframe tools.
+
+| Category              | Templates                                                                                                                         |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Blocks & Callouts** | Heading, Subtitle, Divider, Quote, Read Aloud, Note, Warning, Lore, GM Note, Secret                                               |
+| **Media & Data**      | Image + Text, Hero Image, Key/Value List, Tags, Stats Row                                                                         |
+| **Galleries**         | Gallery _(Uniform, Portrait, Landscape, Feature + Grid, and Captioned modes)_                                                     |
+| **Layouts**           | Two Columns, Columns 33/66, Columns 66/33, Three Columns, Sidebar Left, Sidebar Right, Hero + Content, Media + Content, Card Grid |
+| **Characters**        | NPC Card, NPC Dossier _(presets: Editorial, Minimal, Arcane, Bestiary)_                                                           |
+| **Places & Lore**     | Location, Wiki Article _(with live-generated Table of Contents and flexible infobox)_                                             |
+
+---
 
 ## Using Loreframe
 
 ### Inserting blocks
 
-1. Open a Journal text page in edit mode and place the cursor.
-2. Pick a block from the **Loreframe** menu (Quick Blocks, Layouts, Structures), or choose
-   **Open Template Library…** to browse, search, preview and pick a style.
-3. The block's first field is selected: start typing to replace the placeholder.
+1. Open a Journal text page in **Edit** mode and place the cursor where you want a block.
+2. Choose a template from the **Loreframe** toolbar menu (**Favorites**, **Recent**, **Quick Blocks**, **Layouts**, **Structures**), or pick **Open Template Library…** to search, browse categories, switch presets, and preview live output before inserting.
+3. The block's primary field is focused automatically so you can start typing immediately.
 
-Blocks can be nested only inside layout regions (columns, card grids, hero content, galleries inside a location).
-Anywhere else, a new block is inserted after the current one.
+> [!TIP]
+> **Nesting:** Blocks can be nested inside layout containers (columns, card grids, hero content slots, or a Location's gallery region). Inserting from anywhere else places the new block cleanly after the current one.
 
-### Editing blocks
+### Editing blocks & keyboard navigation
 
-Click inside a block to show its toolbar: **Edit**, **Duplicate**, **Delete**.
+Clicking inside any block reveals a compact floating toolbar with **Edit**, **Duplicate**, and **Delete**.
 
-- **Keyboard:** <kbd>Alt</kbd>+<kbd>F10</kbd> moves focus to the toolbar, the arrow keys move between buttons,
-  and <kbd>Esc</kbd> returns to the text.
-- **Edit** opens the block inspector. It holds the block's properties: names, images and alt text, gallery images,
-  Foundry links, optional sections, and the style (preset, portrait position, density, infobox placement).
-- **Delete** asks for confirmation for layouts, structures and blocks with your writing in them.
-- **Rich text is always edited directly in the page.** Switching off a section that contains your writing asks for
-  confirmation first; <kbd>Ctrl</kbd>+<kbd>Z</kbd> brings it back.
+| Action            | Behavior                                                                                                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Toolbar focus** | <kbd>Alt</kbd>+<kbd>F10</kbd> focuses the block toolbar; <kbd>←</kbd> / <kbd>→</kbd>, <kbd>Home</kbd>, <kbd>End</kbd> move between buttons; <kbd>Esc</kbd> returns focus to the page |
+| **Edit**          | Opens the **Block Inspector** for titles, images & alt text, gallery ordering, Foundry links, optional sections, and style presets                                                   |
+| **Duplicate**     | Clones the block with a fresh instance identifier (pasted/dropped blocks also receive unique instance IDs)                                                                           |
+| **Delete**        | Prompts for confirmation on layouts, structures, and blocks containing your writing (<kbd>Ctrl</kbd>+<kbd>Z</kbd> restores)                                                          |
 
-### Templates
-
-| Group | Templates |
-| --- | --- |
-| Blocks | Heading, Subtitle, Divider, Quote, Read Aloud, Note, Warning, Lore, GM Note, Secret, Image + Text, Hero Image, Key/Value List, Tags, Stats Row, Gallery |
-| Layouts | Two Columns, 33/66, 66/33, Three Columns, Sidebar Left/Right, Hero + Content, Media + Content, Card Grid |
-| Characters | NPC Card, NPC Dossier (styles: Editorial, Minimal, Arcane, Bestiary) |
-| Places & lore | Location, Wiki Article |
-
-#### GM-only content
-
-GM Note, Secret and the GM Secrets sections use Foundry's own secret blocks. Players do not receive them until you
-reveal them. Wiki infobox placement "Hidden from readers" only hides the box visually and is not a secret.
-
-#### Foundry links
-
-Points of interest, notable NPCs, factions and related entries are Foundry content links. Drag a Scene, Actor,
-Item or Journal page from the sidebar onto the list in the block inspector.
-
-#### Wiki contents
-
-The Wiki Article's contents box is built from the article's headings when the page is read, so it never goes stale.
+- **Rich text stays safe:** All prose fields and nested slots are edited directly inside ProseMirror. Reapplying settings in the inspector grafts your existing rich text and nested blocks back in without losing formatting.
+- **Section toggles:** Hiding an optional section that already contains your writing asks for confirmation first; cancelling leaves the inspector open and your text intact.
+- **Version safety:** Blocks whose version differs from their registered template, as well as unknown templates, are kept read-only and never overwritten.
 
 ### My Templates
 
-In the library, choose **Save as my template…** on any template. In a block inspector, choose
-**Save as template…**. A template of your own remembers the style, sections and options, and appears under
-**My Templates**, where you can edit, duplicate, delete, export and import templates.
+Turn any configured block into a reusable personal preset across worlds:
 
-- Inserted blocks remain regular blocks of the base template, so deleting a template of your own never affects
-  your pages.
-- Templates of your own belong to your Foundry user.
-- Import accepts only Loreframe template packages (JSON, up to 256 KB).
+- In the **Template Library**, choose **Save as my template…** on any template.
+- In the **Block Inspector**, choose **Save as template…** to capture its current preset, sections, and options.
 
-### dnd5e: Actors as NPC cards
+Saved variants belong to your Foundry **user** (up to 100 templates) and can be edited, duplicated, deleted, exported, and imported as JSON packages (up to `256,000` characters, supporting full Unicode/Cyrillic text):
 
-With dnd5e active, dragging an Actor you can observe into a Journal editor asks how to insert it:
+- Inserted blocks remain regular blocks of the base template — deleting a custom template cleans it from your **Favorites** and **Recent** shortcuts without touching existing Journal pages.
+- Variants whose base template or preset is temporarily unavailable are preserved cleanly in storage until that base becomes active again.
 
-- as a **standard Foundry link**;
-- as an **NPC Card**;
-- as an **NPC Dossier**.
+### GM Secrets, Foundry links & Wiki TOC
 
-Cards are snapshots: later Actor changes do not update them. The public biography becomes the summary. An NPC's
-private biography goes only into the dossier's GM Secrets. You can turn this off with the world setting
-**Game system integrations**.
+- **GM-only content:** _GM Note_, _Secret_, and _GM Secrets_ sections wrap content in native Foundry secret blocks (`<section class="secret">`), keeping them invisible to players until revealed.
+- **Visual hiding vs. secrets:** Setting the Wiki infobox placement to _Hidden from readers_ hides the box visually with CSS outside the editor — never use visual hiding for confidential GM notes.
+- **Foundry links:** Lists such as _Points of Interest_, _Notable NPCs_, _Factions_, and _Related entries_ store native `@UUID[uuid]{label}` references. Drag any Scene, Actor, Item, or Journal page from the sidebar directly into the inspector's drop zone.
+- **Wiki Contents:** The **Wiki Article** _Contents_ box builds its outline automatically from the article's headings in View mode so links never go out of date.
+
+### `dnd5e` Actor snapshots
+
+When **dnd5e** is active, dragging an Actor you have at least **Observer** permission for onto a Journal page prompts you to choose:
+
+- **Standard Foundry link**
+- **NPC Card**
+- **NPC Dossier**
+
+> [!IMPORTANT]
+> Imported cards are **snapshots** — later edits to the Actor do not mutate your Journal text. Public biography text fills the summary, while private/GM biography notes go strictly into the dossier's **GM Secrets** block. You can toggle system drop handling via the **Game system integrations** world setting.
+
+---
 
 ## Settings
 
-| Setting | Scope | Purpose |
-| --- | --- | --- |
-| Game system integrations | World | dnd5e Actor drops (requires reload) |
-| Debug logging | Client | Extra console output |
-| Favorites, recent templates | Client (hidden) | Library shortcuts |
-| My Templates | User (hidden) | Your saved template variants |
+| Setting                      | Scope             | Purpose                                                          |
+| ---------------------------- | ----------------- | ---------------------------------------------------------------- |
+| **Game system integrations** | World             | Enable or disable `dnd5e` Actor drop prompts _(requires reload)_ |
+| **Debug logging**            | Client            | Emit detailed Loreframe diagnostics to the browser console       |
+| **Favorites & Recent**       | Client _(hidden)_ | Library and menu shortcut lists                                  |
+| **My Templates**             | User _(hidden)_   | Per-user declarative template variants                           |
+
+---
 
 ## For module developers
 
-The API is available at `game.modules.get("loreframe").api` from the `loreframeRegisterTemplates` hook (fired
-during `setup`) onward. `loreframeReady` fires on `ready`.
+Loreframe exposes a frozen extension API at `game.modules.get("loreframe").api` starting from the `loreframeRegisterTemplates` hook (fired during `setup`), followed by `loreframeReady` on `ready`.
+
+<details>
+<summary>Example: registering a custom preset and declarative template</summary>
 
 ```js
 Hooks.once("loreframeRegisterTemplates", (api) => {
   api.registerPreset({ id: "grim", name: "MYMOD.Preset.Grim" });
+
   api.registerTemplate({
     id: "mymod-rumour",
     version: 1,
@@ -110,53 +154,63 @@ Hooks.once("loreframeRegisterTemplates", (api) => {
 });
 ```
 
-| Member | Description |
-| --- | --- |
-| `version` | Module version. |
-| `openTemplateLibrary()` | Opens the library. |
-| `insertTemplate(id, { preset }?)` | Inserts into the most recently focused editable editor; returns `false` if there is none. |
-| `registerTemplate(definition)` / `unregisterTemplate(id)` | Data-only templates. |
-| `registerPreset(preset)` | A visual preset: adds `loreframe-preset--<id>` to block roots. |
-| `registerSystemAdapter(adapter)` | Maps system documents to NPC data (see `src/integrations/types.ts`). |
+</details>
 
-### Template rules
+### Public API
 
-Templates are **declarative data**. They must use one of the built-in renderers:
+| Member                                                    | Description                                                                                           |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `version`                                                 | Active Loreframe module version string                                                                |
+| `openTemplateLibrary()`                                   | Opens the Template Library window                                                                     |
+| `insertTemplate(id, { preset }?)`                         | Inserts into the most recently focused editable editor; returns `false` if none is available          |
+| `registerTemplate(definition)` / `unregisterTemplate(id)` | Registers or removes declarative templates (`LoreframeTemplateDefinition`)                            |
+| `registerPreset(preset)`                                  | Registers a style preset (`loreframe-preset--<id>` applied to block roots)                            |
+| `registerSystemAdapter(adapter)`                          | Registers a system integration adapter (see [`src/integrations/types.ts`](src/integrations/types.ts)) |
 
-- `heading`, `subtitle`, `divider`, `quote`;
-- `callout` (`rendererOptions.tone`: note, lore, warning, read-aloud, gm-note, secret);
-- `media`, `hero-image`, `key-value`, `tags`, `stats-row`, `gallery`;
-- `columns` (`rendererOptions.pattern`), `hero-content`, `card-grid`;
-- `npc` (`rendererOptions.variant`: card, dossier), `location`, `wiki-article`.
+### Template & markup rules
 
-Renderers cannot be registered through the API. All markup passes through a tag and attribute allow-list and every
-value is escaped.
+Templates are strictly **declarative data** — custom executable renderers cannot be registered through the public API. Every tree passes through `serializeTree` (strict tag/attribute allow-list, HTML escaping, and safe URL filtering).
 
-### Stored markup
+<details>
+<summary>Built-in renderers (17) and stored DOM attributes</summary>
 
-Every block root carries `data-loreframe-template`, `data-loreframe-version` and `data-loreframe-instance`, and
-optionally `data-loreframe-preset` and `data-loreframe-opt-<field>`. Semantics live in `data-loreframe-*`
-attributes; classes are for styling only.
+**Built-in renderers:**
 
-Blocks whose version differs from the registered template, and blocks of unknown templates, are never rebuilt: they
-are left untouched.
+- Text & callouts: `heading`, `subtitle`, `divider`, `quote`, `callout` (`rendererOptions.tone`: `note`, `lore`, `warning`, `read-aloud`, `gm-note`, `secret`)
+- Media & data: `media`, `hero-image`, `key-value`, `tags`, `stats-row`, `gallery`
+- Layouts: `columns` (`rendererOptions.pattern`: `halves`, `narrow-wide`, `wide-narrow`, `thirds`, `sidebar-left`, `sidebar-right`), `hero-content`, `card-grid`
+- Structures: `npc` (`rendererOptions.variant`: `card`, `dossier`), `location`, `wiki-article`
+
+**Stored HTML contract:**
+
+- Block roots carry `data-loreframe-template`, `data-loreframe-version`, and `data-loreframe-instance`, plus optional `data-loreframe-preset` and `data-loreframe-opt-<field>` attributes.
+- Semantics live strictly in `data-loreframe-*`; classes (`.loreframe*`) handle styling only.
+- Blocks with an unknown template ID or a mismatched `data-loreframe-version` are left untouched and read-only for Loreframe.
+
+</details>
+
+---
 
 ## Development
 
+Requires **Node.js `>=24`**. Contributor guidelines and codebase structure live in [`AGENTS.md`](AGENTS.md) and [`docs/architecture.md`](docs/architecture.md); version history is tracked in [`CHANGELOG.md`](CHANGELOG.md).
+
 ```bash
 npm install
-npm run check    # typecheck, ESLint, Stylelint, Vitest, build
-npm run deploy   # copy dist/module/ into %LOCALAPPDATA%/FoundryVTT/Data/modules/loreframe (or FOUNDRY_DATA)
-npm run release  # check, then write dist/loreframe-v<version>.zip
+npm run check    # TypeScript, ESLint, Stylelint, Vitest, Vite production build
+npm run format   # Format repository with Prettier
+npm run deploy   # Copy dist/module/ into FOUNDRY_DATA or %LOCALAPPDATA%/FoundryVTT/Data
+npm run release  # Run npm run check and build dist/loreframe-v<version>.zip
 ```
 
 ### Publishing a release
 
-1. Bump `version` in `package.json` and `module.json` (the `download` URL contains the version) and add a
-   `CHANGELOG.md` entry.
-2. Run `npm run release`. It refuses to package when the manifest version, URLs or listed files do not match.
-3. Push to `main` of [TacticalOtaku/Loreframe](https://github.com/TacticalOtaku/Loreframe), create the GitHub release
-   `v<version>` and attach `loreframe-v<version>.zip`.
+1. Update `version` in [`package.json`](package.json), [`package-lock.json`](package-lock.json), and [`module.json`](module.json) (including the `download` URL), and add an entry to [`CHANGELOG.md`](CHANGELOG.md).
+2. Run `npm run release` — packaging aborts if manifest URLs, versions, or built files are inconsistent.
+3. Push to `main` on [TacticalOtaku/Loreframe](https://github.com/TacticalOtaku/Loreframe), create release `v<version>`, and attach `dist/loreframe-v<version>.zip`.
 
-Foundry installs the module from
-`https://raw.githubusercontent.com/TacticalOtaku/Loreframe/main/module.json`.
+---
+
+<div align="center">
+<sub>Released under the <a href="LICENSE">MIT License</a> · Copyright © 2026 <a href="https://github.com/TacticalOtaku">TacticalOtaku</a></sub>
+</div>
