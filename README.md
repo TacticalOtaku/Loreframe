@@ -8,7 +8,7 @@
 [![System](https://img.shields.io/badge/dnd5e-5.3.3%20optional-7c4d2b?style=flat-square)](https://github.com/foundryvtt/dnd5e)
 [![Release](https://img.shields.io/github/v/release/TacticalOtaku/Loreframe?style=flat-square&color=4a6b53)](https://github.com/TacticalOtaku/Loreframe/releases)
 [![Languages](https://img.shields.io/badge/Languages-EN%20%7C%20RU-3b5978?style=flat-square)](#)
-[![License](https://img.shields.io/badge/License-MIT-555555?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPLv3-555555?style=flat-square)](LICENSE)
 
 [Installation](#installation) · [Built-in Library](#built-in-library) · [Workflow](#using-loreframe) · [Developer API](#for-module-developers) · [Development](#development)
 
@@ -33,7 +33,7 @@ Loreframe extends the standard **Foundry VTT 14** ProseMirror Journal editor ins
 Install directly from Foundry VTT's **Add-on Modules** browser using the manifest URL:
 
 ```text
-https://raw.githubusercontent.com/TacticalOtaku/Loreframe/main/module.json
+https://github.com/TacticalOtaku/Loreframe/releases/latest/download/module.json
 ```
 
 1. Open Foundry VTT Setup → **Add-on Modules** → **Install Module**.
@@ -193,7 +193,9 @@ Templates are strictly **declarative data** — custom executable renderers cann
 
 ## Development
 
-Requires **Node.js `>=24`**. Contributor guidelines and codebase structure live in [`AGENTS.md`](AGENTS.md) and [`docs/architecture.md`](docs/architecture.md); version history is tracked in [`CHANGELOG.md`](CHANGELOG.md).
+Requires **Node.js `>=24`**. Codebase architecture and invariants live in [`docs/architecture.md`](docs/architecture.md), contribution policy in [`CONTRIBUTING.md`](CONTRIBUTING.md), and version history in [`CHANGELOG.md`](CHANGELOG.md).
+
+Pull Requests are disabled on this repository; bug reports and suggestions are welcome via [GitHub Issues](https://github.com/TacticalOtaku/Loreframe/issues).
 
 ```bash
 npm install
@@ -207,10 +209,10 @@ npm run release  # Run npm run check and build dist/loreframe-v<version>.zip
 
 1. Update `version` in [`package.json`](package.json), [`package-lock.json`](package-lock.json), and [`module.json`](module.json) (including the `download` URL), and add an entry to [`CHANGELOG.md`](CHANGELOG.md).
 2. Run `npm run release` — packaging aborts if manifest URLs, versions, or built files are inconsistent.
-3. Push to `main` on [TacticalOtaku/Loreframe](https://github.com/TacticalOtaku/Loreframe), create release `v<version>`, and attach `dist/loreframe-v<version>.zip`.
+3. Push to `main` and push tag `v<version>` on [TacticalOtaku/Loreframe](https://github.com/TacticalOtaku/Loreframe) — GitHub Actions publishes the release with `dist/loreframe-v<version>.zip` and `module.json`.
 
 ---
 
 <div align="center">
-<sub>Released under the <a href="LICENSE">MIT License</a> · Copyright © 2026 <a href="https://github.com/TacticalOtaku">TacticalOtaku</a></sub>
+<sub>Released under the <a href="LICENSE">GNU General Public License v3.0 (GPL-3.0)</a> · Copyright © 2026 <a href="https://github.com/TacticalOtaku">TacticalOtaku</a></sub>
 </div>

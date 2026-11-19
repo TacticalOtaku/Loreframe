@@ -65,7 +65,7 @@ describe("release manifest", () => {
     expect(archiveName("loreframe", "0.1.0")).toBe("loreframe-v0.1.0.zip");
     expect(releaseUrls(`${REPO}/`, "loreframe", "0.1.0")).toEqual({
       url: REPO,
-      manifest: "https://raw.githubusercontent.com/TacticalOtaku/Loreframe/main/module.json",
+      manifest: `${REPO}/releases/latest/download/module.json`,
       download: `${REPO}/releases/download/v0.1.0/loreframe-v0.1.0.zip`,
     });
   });

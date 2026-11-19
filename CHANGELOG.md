@@ -17,7 +17,6 @@
 ### Development
 
 - Migrated and expanded unit tests across catalog, insertion, block lifecycle, library session, inspector model and document drop flow.
-- Replaced `CLAUDE.md` with `AGENTS.md` and added repository agent configuration docs under `docs/agents/`.
 
 ## 0.2.2
 

@@ -1,7 +1,6 @@
 # Loreframe architecture
 
-Loreframe extends Foundry VTT 14's Journal editor. It does not replace it. This note maps the code; the rules
-contributors must keep are in [`AGENTS.md`](../AGENTS.md).
+Loreframe extends Foundry VTT 14's Journal editor. It does not replace it. This note maps the code and key architectural invariants.
 
 ## Layers
 

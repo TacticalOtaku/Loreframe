@@ -4,3 +4,9 @@ artifacts/
 *.zip
 CLAUDE.md
 .claude/
+AGENTS.md
+docs/agents/
+docs/plans/
+docs/superpowers/
+release-notes/
+.DS_Store
