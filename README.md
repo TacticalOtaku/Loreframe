@@ -1,5 +1,7 @@
 <div align="center">
 
+**English** · [Русский](README.ru.md)
+
 # Loreframe
 
 **Reusable visual blocks, responsive layouts, and RPG content templates for the Foundry VTT 14 Journal editor**
@@ -210,6 +212,14 @@ npm run release  # Run npm run check and build dist/loreframe-v<version>.zip
 | [docs/architecture.md](docs/architecture.md) | Codebase architecture and invariants |
 | [CHANGELOG.md](CHANGELOG.md)                 | Version-by-version release notes     |
 | [CONTRIBUTING.md](CONTRIBUTING.md)           | Issue reporting guidelines           |
+
+---
+
+## AI Disclosure
+
+AI-assisted tools were used during development for tasks such as code drafting, refactoring, tests, documentation, and localization drafts. All architecture, code, behavior, user-facing copy, and Russian/English translations are reviewed, tested, and maintained by **TacticalOtaku**, who retains sole authorship and responsibility for the module.
+
+All bundled package assets and user-facing materials comply with Foundry VTT's [AI Content Policy](https://foundryvtt.com/article/ai-policy/) — no pre-generated AI art, audio, or lore assets are included.
 
 ---
 
